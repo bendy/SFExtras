@@ -1,6 +1,6 @@
 From PLF Require Import Imp.
 From PLF Require Import Maps.
-From Top Require Import Fixpoints.
+From DS Require Import Fixpoints.
 From Coq Require Import Lia.
 
 Definition AExpDom := PSet (nat * state).
@@ -34,19 +34,19 @@ Fixpoint denote_A (a : aexp) : AExpDom :=
 
   | AId x  => {{ ( m, st ) |  m = st x }}
 
-  | APlus a1 a2 => {{ (n', st) |
+  | <{a1 + a2}> => {{ (n', st) |
                       exists v1 v2,
                       (v1, st) ∈ [[ a1 ]]A
                       /\ (v2, st) ∈ [[ a2 ]]A
                       /\ n' = v1 + v2 }}
 
-  | AMinus a1 a2 => {{ (n', st) |
+  | <{a1 - a2}> => {{ (n', st) |
                       exists v1 v2,
                       (v1, st) ∈ [[ a1 ]]A
                       /\ (v2, st) ∈ [[ a2 ]]A
                       /\ n' = v1 - v2 }}
 
-  | AMult a1 a2 => {{ (n', st) |
+  | <{a1 * a2}> => {{ (n', st) |
                       exists v1 v2,
                       (v1, st) ∈ [[ a1 ]]A
                       /\ (v2, st) ∈ [[ a2 ]]A
@@ -64,25 +64,33 @@ where "'[[' a ']]A'" := (denote_A a).
    ⟦b1 && b2⟧B ≡ {(σ, v1 && v2) | (σ, v1) ∈ ⟦b1⟧B  ∧ (σ, v2) ∈ ⟦b2⟧B} *)
 Fixpoint denote_B (b : bexp) : BExpDom :=
   match b with
-  | BTrue => {{ (v, st) | v = true }}
+  | <{true}> => {{ (v, st) | v = true }}
 
-  | BFalse => {{ (v, st) | v = false }}
+  | <{false}> => {{ (v, st) | v = false }}
 
-  | BEq a1 a2 => {{ (v, st) |
+  | <{a1 = a2}> => {{ (v, st) |
     exists v1 v2,
     (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
-    /\ (v1 = v2 -> v = true)
-    /\ (v1 <> v2 -> v = false) }}
+    /\ (v1 = v2 <-> v = true)}}
 
-  | BLe a1 a2 => {{ (v, st) |
+  | <{a1 <> a2}> => {{ (v, st) |
     exists v1 v2,
     (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
-    /\ (v1 <= v2 -> v = true)
-    /\ (~ v1 <= v2 -> v = false) }}
+    /\ (v1 = v2 <-> v = false) }}
 
-  | BNot b1 => {{ (v, st) |  (negb v, st) ∈ [[ b1 ]]B }}
+  | <{ a1 <= a2}> => {{ (v, st) |
+    exists v1 v2,
+    (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
+    /\ (v1 <= v2 <-> v = true) }}
 
-  | BAnd b1 b2 => {{ (v, st) |
+  | <{ a1 > a2}> => {{ (v, st) |
+    exists v1 v2,
+    (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
+    /\ (v1 > v2 <-> v = true) }}
+
+  | <{~ b1}> => {{ (v, st) |  (negb v, st) ∈ [[ b1 ]]B }}
+
+  | <{b1 && b2}> => {{ (v, st) |
     exists v1 v2,
     (v1, st) ∈ [[ b1 ]]B /\ (v2, st) ∈ [[ b2 ]]B
     /\ v = (andb v1 v2) }}
@@ -97,35 +105,42 @@ Definition aexp_eqv (a a' : aexp) : Prop :=
 Definition bexp_eqv (b b' : bexp) : Prop :=
   Same_set ([[ b ]]B) ([[ b' ]]B).
 
+Notation "a1 '==A' a2 " := (aexp_eqv a1 a2) (at level 40).
+Notation "b1 '==B' b2 " := (bexp_eqv b1 b2) (at level 40).
+
 (* Since expression equivalence is defined in terms of set
    equivalence, we can obtain proofs that it is reflexive,
    transititve, and symmetric for 'free'. *)
 
-Lemma aexp_eqv_refl : forall (a : aexp), aexp_eqv a a.
+Lemma aexp_eqv_refl : forall (a : aexp),
+    a ==A a.
 Proof. intro; apply Same_set_refl. Qed.
 
-Lemma aexp_eqv_sym : forall (a1 a2 : aexp), aexp_eqv a1 a2 -> aexp_eqv a2 a1.
+Lemma aexp_eqv_sym : forall (a1 a2 : aexp),
+    a1 ==A a2 -> a2 ==A a1.
 Proof. intros; apply Same_set_sym; assumption. Qed.
 
 Lemma aexp_eqv_trans : forall (a1 a2 a3 : aexp),
-    aexp_eqv a1 a2 -> aexp_eqv a2 a3 -> aexp_eqv a1 a3.
+    a1 ==A a2 -> a2 ==A a3 -> a1 ==A a3.
 Proof. intros; eapply Same_set_trans; eassumption. Qed.
 
-Lemma bexp_eqv_refl : forall (b : bexp), bexp_eqv b b.
+Lemma bexp_eqv_refl : forall (b : bexp),
+    b ==B b.
 Proof. intro; apply Same_set_refl. Qed.
 
-Lemma bexp_eqv_sym : forall (b1 b2 : bexp), bexp_eqv b1 b2 -> bexp_eqv b2 b1.
+Lemma bexp_eqv_sym : forall (b1 b2 : bexp),
+    b1 ==B b2 -> b2 ==B b1.
 Proof. intros; apply Same_set_sym; assumption. Qed.
 
 Lemma bexp_eqv_trans : forall (b1 b2 b3 : bexp),
-    bexp_eqv b1 b2 -> bexp_eqv b2 b3 -> bexp_eqv b1 b3.
+    b1 ==B b2 -> b2 ==B b3 -> b1 ==B b3.
 Proof. intros; eapply Same_set_trans; eassumption. Qed.
 
 (* We can reason about equivalence of two expressions by reasoning
    about their denotations, allowing us to use any lemmas or theorems
    about sets. *)
 
-Theorem axp_eqv_example: aexp_eqv <{ X + Y }> <{ Y + X }>.
+Theorem axp_eqv_example: <{ X + Y }> ==A <{ Y + X }>.
 Proof.
   (* To show two expressions are equivalent, we need to prove their
   denotations are the same. That is, we need to show that every
@@ -149,7 +164,7 @@ Proof.
     lia.
 Qed.
 
-Theorem axp_eqv_example_2: aexp_eqv <{ X - X }> <{ 0 }>.
+Theorem axp_eqv_example_2: <{ X - X }> ==A <{ 0 }>.
 Proof.
   split; simpl; intros (n, st) In_st.
   - In_inversion. subst.
@@ -166,9 +181,9 @@ Qed.
    expression equivalence is a /congruence/: that two expressions are
    equivalent if their subexpressions are equivalent.  *)
 Lemma beq_eqv_cong : forall a1 a2 a1' a2',
-    aexp_eqv a1 a1' ->
-    aexp_eqv a2 a2' ->
-    bexp_eqv <{a1 = a2}> <{a1' = a2'}>.
+    a1 ==A a1' ->
+    a2 ==A a2' ->
+    <{a1 = a2}> ==B <{a1' = a2'}>.
 Proof.
   intros a1 a2 a1' a2' a1_eqv a2_eqv; split;
     intros (b, st) v_In.
@@ -178,38 +193,38 @@ Proof.
        [[a2]]A are equivalent to [[a1']]A [[a2']]A *)
     simpl in *; In_inversion; In_intro.
     exists x, x0.
-    repeat split; try assumption.
+    repeat split; try tauto.
     + apply a1_eqv; assumption.
     + apply a2_eqv; assumption.
   - simpl in *; In_inversion; In_intro.
     exists x, x0.
-    repeat split; try assumption.
+    repeat split; try tauto.
     + apply a1_eqv; assumption.
     + apply a2_eqv; assumption.
 Qed.
 
 Lemma ble_eqv_cong : forall a1 a2 a1' a2',
-    aexp_eqv a1 a1' ->
-    aexp_eqv a2 a2' ->
-    bexp_eqv <{a1 <= a2}> <{a1' <= a2'}>.
+    a1 ==A a1' ->
+    a2 ==A a2' ->
+    <{a1 <= a2}> ==B <{a1' <= a2'}>.
 Proof.
   intros a1 a2 a1' a2' a1_eqv a2_eqv; split;
     simpl; intros (b, st) v_In; In_inversion.
   - In_intro.
     exists x, x0.
-    repeat split; try assumption.
+    repeat split; try tauto.
     + apply a1_eqv; assumption.
     + apply a2_eqv; assumption.
   - In_intro.
     exists x, x0.
-    repeat split; try assumption.
+    repeat split; try tauto.
     + apply a1_eqv; assumption.
     + apply a2_eqv; assumption.
 Qed.
 
 Lemma bnot_eqv_cong : forall b1 b1',
-    bexp_eqv b1 b1' ->
-    bexp_eqv <{~ b1}> <{~ b1'}>.
+    b1 ==B b1' ->
+    <{~ b1}> ==B <{~ b1'}>.
 Proof.
   intros b1 b1' b1_eqv; split;
     simpl; intros (b, st) v_In; In_inversion.
@@ -218,9 +233,9 @@ Proof.
 Qed.
 
 Lemma band_eqv_cong : forall b1 b2 b1' b2',
-    bexp_eqv b1 b1' ->
-    bexp_eqv b2 b2' ->
-    bexp_eqv <{b1 && b2}> <{b1' && b2'}>.
+    b1 ==B b1' ->
+    b2 ==B b2' ->
+    <{b1 && b2}> ==B <{b1' && b2'}>.
 Proof.
   intros b1 b2 b1' b2' b1_eqv b2_eqv; split;
     simpl; intros (b, st) v_In; In_inversion.
@@ -236,7 +251,7 @@ Qed.
 
 (* These congruence facts are quite useful for reasonin about
    particular expressions. *)
-Theorem bexp_eqv_example: bexp_eqv <{ X - X = 0 }> <{ true }>.
+Theorem bexp_eqv_example: <{ X - X = 0 }> ==B <{ true }>.
 Proof.
   (* We first use the fact that equivalence (i.e. set equality) is
   transitive to simplify the left-hand side of the equality. *)
@@ -247,7 +262,6 @@ Proof.
   - split; simpl; intros (b, st) v_In; In_inversion; In_intro; subst.
     + apply H1; reflexivity.
     + exists 0, 0; repeat split.
-      intros; lia.
 Qed.
 
 (* The semantic domain for commands is pairs of initial and final
@@ -309,11 +323,13 @@ where "'[[' c ']]'" := (denote_Com c).
 Definition com_eqv (c c' : com) : Prop :=
   Same_set ([[ c ]]) ([[c']]).
 
+Notation "c1 '==C' c2 " := (com_eqv c1 c2) (at level 40).
+
 (* Using the denotational semantics of commands, we can prove that
    programs have the same meaning: *)
 Lemma seq_skip_opt :
   forall c,
-    com_eqv <{skip; c}> c.
+    <{skip; c}> ==C c.
 Proof.
   intros c; split; intros (st, st') In_st.
   - (* (st, st') ∈ [[skip; c]] -> (st, st') ∈ [[c]] *)
@@ -336,10 +352,8 @@ Qed.
    expression is semantically equivalent to the then branch: *)
 
 Theorem if_true: forall b c1 c2,
-  bexp_eqv b <{true}>  ->
-  com_eqv
-    <{ if b then c1 else c2 end }>
-    c1.
+    b ==B <{true}>  ->
+    <{ if b then c1 else c2 end }> ==C  c1.
 Proof.
   intros b c1 c2 Hb.
   split; intros (st, st') st_In.
@@ -392,8 +406,7 @@ Qed.
 
 Lemma If_while_eq :
   forall b c,
-    com_eqv <{while b do c end}>
-    <{if b then (c; while b do c end) else skip end }>.
+    <{while b do c end}> ==C <{if b then (c; while b do c end) else skip end }>.
 Proof.
   unfold com_eqv; intros.
   eapply Same_set_trans.
@@ -418,9 +431,9 @@ Qed.
 
    The first step is to show this holds for individual commands. *)
 Lemma seq_eq_cong : forall c1 c2 c1' c2',
-    com_eqv c1 c1' ->
-    com_eqv c2 c2' ->
-    com_eqv <{c1; c2}> <{c1'; c2'}>.
+    c1 ==C c1' ->
+    c2 ==C c2' ->
+    <{c1; c2}> ==C <{c1'; c2'}>.
 Proof.
   intros; split; simpl; intros (st, st') X_In; In_inversion.
   - exists x; split.
@@ -432,9 +445,9 @@ Proof.
 Qed.
 
 Lemma if_eq_cong : forall b c1 c2 c1' c2',
-    com_eqv c1 c1' ->
-    com_eqv c2 c2' ->
-    com_eqv <{if b then c1 else c2 end}> <{if b then c1' else c2' end}>.
+    c1 ==C c1' ->
+    c2 ==C c2' ->
+    <{if b then c1 else c2 end}> ==C <{if b then c1' else c2' end}>.
 Proof.
   intros; split; simpl; intros x X_In; In_inversion.
   - left; intuition. apply H. assumption.
@@ -444,8 +457,8 @@ Proof.
 Qed.
 
 Lemma while_eq_cong : forall b c1 c1',
-    com_eqv c1 c1' ->
-    com_eqv <{while b do c1 end}> <{while b do c1' end}>.
+    c1 ==C c1' ->
+    <{while b do c1 end}> ==C <{while b do c1' end}>.
 Proof.
   intros; split; simpl; intros x X_In; In_inversion.
   - intuition.
@@ -517,8 +530,8 @@ Lemma contextual_equivalence :
   forall c1 c2 ctx c1' c2',
     Plug c1 ctx c1' ->
     Plug c2 ctx c2' ->
-    com_eqv c1 c2 ->
-    com_eqv c1' c2'.
+    c1 ==C c2 ->
+    c1' ==C c2'.
 Proof.
   induction ctx; intros; inversion H; inversion H0; subst.
   - intuition.
@@ -562,12 +575,25 @@ Proof.
     + apply Denotational_A_BigStep_Sound.
     + apply Denotational_A_BigStep_Sound.
     + rewrite H. apply PeanoNat.Nat.eqb_refl.
-    + apply PeanoNat.Nat.eqb_neq; assumption.
+    + eapply PeanoNat.Nat.eqb_eq; assumption.
   - eexists (aeval st a1), (aeval st a2); intuition.
     + apply Denotational_A_BigStep_Sound.
     + apply Denotational_A_BigStep_Sound.
-    + apply Compare_dec.leb_correct; assumption.
-    + apply PeanoNat.Nat.leb_nle. assumption.
+    + rewrite H, PeanoNat.Nat.eqb_refl; reflexivity.
+    + apply Bool.negb_false_iff in H.
+      eapply PeanoNat.Nat.eqb_eq; assumption.
+  - eexists (aeval st a1), (aeval st a2); intuition.
+    + apply Denotational_A_BigStep_Sound.
+    + apply Denotational_A_BigStep_Sound.
+    + eapply Compare_dec.leb_correct; assumption.
+    + eapply Compare_dec.leb_complete; assumption.
+  - eexists (aeval st a1), (aeval st a2); intuition.
+    + apply Denotational_A_BigStep_Sound.
+    + apply Denotational_A_BigStep_Sound.
+    + apply Bool.negb_true_iff.
+      apply PeanoNat.Nat.leb_gt; assumption.
+    + apply Bool.negb_true_iff in H.
+      apply PeanoNat.Nat.leb_gt; assumption.
   - rewrite Bool.negb_involutive. apply IHb.
   - eexists _, _; intuition.
     + apply IHb1.
@@ -645,9 +671,18 @@ Proof.
     + rewrite H; try reflexivity.
       apply PeanoNat.Nat.eqb_eq.
       assumption.
-    + rewrite H0; try reflexivity.
-      apply PeanoNat.Nat.eqb_neq in Heqb.
+    + apply EqNat.beq_nat_false in Heqb.
+      destruct v; eauto.
+  - destruct H as [v1 [v2 [denote_a1 [denote_a2 v_eq] ] ] ]; subst; simpl.
+    apply BigStep_A_Denotational_Adequate in denote_a1.
+    apply BigStep_A_Denotational_Adequate in denote_a2.
+    subst.
+    destruct (Nat.eqb (aeval st a1) (aeval st a2)) eqn: ?; intuition.
+    + rewrite H; try reflexivity.
+      apply PeanoNat.Nat.eqb_eq.
       assumption.
+    + apply EqNat.beq_nat_false in Heqb.
+      destruct v; eauto; intuition.
   - destruct H as [v1 [v2 [denote_a1 [denote_a2 v_eq] ] ] ]; subst; simpl.
     apply BigStep_A_Denotational_Adequate in denote_a1.
     apply BigStep_A_Denotational_Adequate in denote_a2.
@@ -655,9 +690,17 @@ Proof.
     destruct (Nat.leb (aeval st a1) (aeval st a2)) eqn: ?; intuition.
     + rewrite H; try reflexivity.
       apply Compare_dec.leb_complete; assumption.
-    + rewrite H0; try reflexivity.
-      apply PeanoNat.Nat.leb_nle.
-      assumption.
+    + apply Compare_dec.leb_complete_conv in Heqb.
+      destruct v; eauto; intuition; lia.
+  - destruct H as [v1 [v2 [denote_a1 [denote_a2 v_eq] ] ] ]; subst; simpl.
+    apply BigStep_A_Denotational_Adequate in denote_a1.
+    apply BigStep_A_Denotational_Adequate in denote_a2.
+    subst. intuition.
+    destruct (Nat.leb (aeval st a1) (aeval st a2)) eqn: ?; intuition.
+    + destruct v; eauto; intuition.
+      apply Compare_dec.leb_complete in Heqb; lia.
+    + destruct v; eauto; intuition.
+      apply Compare_dec.leb_complete_conv in Heqb; intuition.
   - simpl in H; In_inversion.
     simpl; rewrite IHb with (v := negb v).
     + apply Bool.negb_involutive.
