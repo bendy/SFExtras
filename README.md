@@ -6,14 +6,14 @@ Foundations](https://softwarefoundations.cis.upenn.edu/). Once that is
 installed, you'll need to add a _CoqProject file that point to the
 locations of Volumes 1 + 2 of Software Foundations.
 
-# ChurchEncodings
+## ChurchEncodings
 A deeply embedded formalization of the untyped lambda calculus with
 natural numbers, as well as a number of examples of church-encoded
 datatypes (namely booleans, pairs, natural numbers, and lists).
 
 - Church.v: language definitions a church encoding examples
 
-# DenotationalSemantics
+## DenotationalSemantics
 The denotational semantics of a simple imperative language.
 
 - Fixpoints.v: basics of fixpoints of monotone functions
