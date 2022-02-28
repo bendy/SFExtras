@@ -1,5 +1,3 @@
-From LF Require Import Logic.
-
 Section Sets.
   (* Extensional: Explicitly spell out all the members of a set.
      I.e. The set of states in the US is "Alabama, Alaska, ...." *)
@@ -11,6 +9,13 @@ Section Sets.
      set, and is not an element otherwise. *)
 
   Definition Bool_Set (A : Type) := A -> bool.
+
+  Fixpoint evenb (n:nat) : bool :=
+    match n with
+    | O => true
+    | S O => false
+    | S (S n') => evenb n'
+    end.
 
   Definition evens : Bool_Set nat := evenb.
   Definition In_b {A} (a : A) (e : Bool_Set A) : Prop :=
@@ -43,6 +48,8 @@ Section Fixpoints.
   Definition In {A} (a : A) (e : PSet A) : Prop := e a.
   Notation "x '∈' e" := (In x e) (at level 60).
 
+  Definition even x := exists n : nat, x = 2 * n.
+  
   Example even_6 : 6 ∈ even. Proof. unfold In. exists 3. reflexivity. Qed.
 
   Definition Subset {A} (e1 e2 : PSet A) : Prop :=
@@ -325,4 +332,14 @@ Ltac In_inversion :=
            apply In_pair_inv in H;
            destruct H as [? [? [? H] ] ]; subst ab
          | H : @In _ _ _ |- _ => unfold In in H
+         | H : _ /\ _ |- _ => destruct H
+         | H : _ \/ _ |- _ => destruct H
+         | H : exists _, _ |- _ => destruct H
+         | H : _ = _ |- _ => solve [discriminate]
+         end.
+
+Ltac In_intro :=
+  repeat match goal with
+         | |- In _ _ => unfold In
+         | |- _ = _ => solve [intuition]
          end.

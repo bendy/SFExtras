@@ -1,6 +1,7 @@
-From LF Require Import Imp.
-From LF Require Import Maps.
+From PLF Require Import Imp.
+From PLF Require Import Maps.
 From Top Require Import Fixpoints.
+From Coq Require Import Lia.
 
 Definition AExpDom := PSet (nat * state).
 Definition BExpDom := PSet (bool * state).
@@ -88,6 +89,167 @@ Fixpoint denote_B (b : bexp) : BExpDom :=
   end
 where "'[[' b ']]B'" := (denote_B b).
 
+(* Two expressions are semantically equivalent if their denotation is
+   the same set of states and values. *)
+Definition aexp_eqv (a a' : aexp) : Prop :=
+  Same_set ([[ a ]]A) ([[ a' ]]A).
+
+Definition bexp_eqv (b b' : bexp) : Prop :=
+  Same_set ([[ b ]]B) ([[ b' ]]B).
+
+(* Since expression equivalence is defined in terms of set
+   equivalence, we can obtain proofs that it is reflexive,
+   transititve, and symmetric for 'free'. *)
+
+Lemma aexp_eqv_refl : forall (a : aexp), aexp_eqv a a.
+Proof. intro; apply Same_set_refl. Qed.
+
+Lemma aexp_eqv_sym : forall (a1 a2 : aexp), aexp_eqv a1 a2 -> aexp_eqv a2 a1.
+Proof. intros; apply Same_set_sym; assumption. Qed.
+
+Lemma aexp_eqv_trans : forall (a1 a2 a3 : aexp),
+    aexp_eqv a1 a2 -> aexp_eqv a2 a3 -> aexp_eqv a1 a3.
+Proof. intros; eapply Same_set_trans; eassumption. Qed.
+
+Lemma bexp_eqv_refl : forall (b : bexp), bexp_eqv b b.
+Proof. intro; apply Same_set_refl. Qed.
+
+Lemma bexp_eqv_sym : forall (b1 b2 : bexp), bexp_eqv b1 b2 -> bexp_eqv b2 b1.
+Proof. intros; apply Same_set_sym; assumption. Qed.
+
+Lemma bexp_eqv_trans : forall (b1 b2 b3 : bexp),
+    bexp_eqv b1 b2 -> bexp_eqv b2 b3 -> bexp_eqv b1 b3.
+Proof. intros; eapply Same_set_trans; eassumption. Qed.
+
+(* We can reason about equivalence of two expressions by reasoning
+   about their denotations, allowing us to use any lemmas or theorems
+   about sets. *)
+
+Theorem axp_eqv_example: aexp_eqv <{ X + Y }> <{ Y + X }>.
+Proof.
+  (* To show two expressions are equivalent, we need to prove their
+  denotations are the same. That is, we need to show that every
+  element in the denotation of [X + Y] is included in [Y + X] and vice
+  versa. *)
+  split; intros (n, st) In_st.
+  - (* In the first case, we need to show that
+       (n, st) ∈ [[X + Y]]A implies  (n, st) ∈ [[Y + X]]A *)
+  (* [In_inversion] is a custom tactic for working with assumptions
+     about memembership in a set. It is defined in Fixpoints.v *)
+    simpl in In_st. In_inversion. subst.
+    (* [In_intro] is a custom tactic for working with goals about set
+       memembership, it is also defined in Fixpoints.v *)
+    simpl. In_intro.
+    exists (st Y), (st X); repeat split. lia.
+  - (* In the second case, we need to show that
+       (n, st) ∈ [[Y + X]]A implies  (n, st) ∈ [[X + Y]]A *)
+    simpl in In_st. In_inversion.
+    In_intro.
+    eexists (st X), (st Y); repeat split.
+    lia.
+Qed.
+
+Theorem axp_eqv_example_2: aexp_eqv <{ X - X }> <{ 0 }>.
+Proof.
+  split; simpl; intros (n, st) In_st.
+  - In_inversion. subst.
+    In_intro; lia.
+  - In_inversion.
+    In_intro.
+    eexists (st X), (st X); repeat split.
+    lia.
+Qed.
+
+(* The semantics of boolean expressions is /compositional/: the
+   meaning of an expression is derived from meaning of its
+   subexpressions. We can exploit this property to show that
+   expression equivalence is a /congruence/: that two expressions are
+   equivalent if their subexpressions are equivalent.  *)
+Lemma beq_eqv_cong : forall a1 a2 a1' a2',
+    aexp_eqv a1 a1' ->
+    aexp_eqv a2 a2' ->
+    bexp_eqv <{a1 = a2}> <{a1' = a2'}>.
+Proof.
+  intros a1 a2 a1' a2' a1_eqv a2_eqv; split;
+    intros (b, st) v_In.
+  - (* Since [[a1 = a2]]B and [[a1' = a2']]B are built from the
+       results of [[a1]]A, [[a2]]A, [[a1']]A, and [[a2]]A, their
+       equivalence follows from the assumptions that [[a1]]A and
+       [[a2]]A are equivalent to [[a1']]A [[a2']]A *)
+    simpl in *; In_inversion; In_intro.
+    exists x, x0.
+    repeat split; try assumption.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+  - simpl in *; In_inversion; In_intro.
+    exists x, x0.
+    repeat split; try assumption.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+Qed.
+
+Lemma ble_eqv_cong : forall a1 a2 a1' a2',
+    aexp_eqv a1 a1' ->
+    aexp_eqv a2 a2' ->
+    bexp_eqv <{a1 <= a2}> <{a1' <= a2'}>.
+Proof.
+  intros a1 a2 a1' a2' a1_eqv a2_eqv; split;
+    simpl; intros (b, st) v_In; In_inversion.
+  - In_intro.
+    exists x, x0.
+    repeat split; try assumption.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+  - In_intro.
+    exists x, x0.
+    repeat split; try assumption.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+Qed.
+
+Lemma bnot_eqv_cong : forall b1 b1',
+    bexp_eqv b1 b1' ->
+    bexp_eqv <{~ b1}> <{~ b1'}>.
+Proof.
+  intros b1 b1' b1_eqv; split;
+    simpl; intros (b, st) v_In; In_inversion.
+  - In_intro. apply b1_eqv; assumption.
+  - In_intro. apply b1_eqv; assumption.
+Qed.
+
+Lemma band_eqv_cong : forall b1 b2 b1' b2',
+    bexp_eqv b1 b1' ->
+    bexp_eqv b2 b2' ->
+    bexp_eqv <{b1 && b2}> <{b1' && b2'}>.
+Proof.
+  intros b1 b2 b1' b2' b1_eqv b2_eqv; split;
+    simpl; intros (b, st) v_In; In_inversion.
+  - In_intro.
+    exists x, x0; repeat split; try assumption.
+    apply b1_eqv; assumption.
+    apply b2_eqv; assumption.
+  - In_intro.
+    exists x, x0; repeat split; try assumption.
+    apply b1_eqv; assumption.
+    apply b2_eqv; assumption.
+Qed.
+
+(* These congruence facts are quite useful for reasonin about
+   particular expressions. *)
+Theorem bexp_eqv_example: bexp_eqv <{ X - X = 0 }> <{ true }>.
+Proof.
+  (* We first use the fact that equivalence (i.e. set equality) is
+  transitive to simplify the left-hand side of the equality. *)
+  eapply bexp_eqv_trans with (b2 := <{0 = 0}>).
+  - apply beq_eqv_cong.
+    + apply axp_eqv_example_2.
+    + eapply aexp_eqv_refl.
+  - split; simpl; intros (b, st) v_In; In_inversion; In_intro; subst.
+    + apply H1; reflexivity.
+    + exists 0, 0; repeat split.
+      intros; lia.
+Qed.
+
 (* The semantic domain for commands is pairs of initial and final
    states: *)
 
@@ -143,28 +305,70 @@ where "'[[' c ']]'" := (denote_Com c).
 
 (* Two commands are semantically equivalent if their denotation is the
    same set of starting and final states. *)
-Definition com_eq (c c' : com) : Prop :=
+
+Definition com_eqv (c c' : com) : Prop :=
   Same_set ([[ c ]]) ([[c']]).
 
-(* [In_inversion] is a custom tactic for working with assumptions
-   about memembership in a set. It is defined in Fixpoints.v *)
-
-(* We can use denotations to prove that programs have the same
-   meaning. *)
+(* Using the denotational semantics of commands, we can prove that
+   programs have the same meaning: *)
 Lemma seq_skip_opt :
   forall c,
-    com_eq <{skip; c}> c.
+    com_eqv <{skip; c}> c.
 Proof.
-  unfold com_eq. unfold Same_set, Subset. simpl; split; intros.
-  - In_inversion.
-    destruct H as [? [? ?] ].
-    In_inversion. subst.
-    assumption.
-  - In_inversion.
-    exists x0.
-    split.
+  intros c; split; intros (st, st') In_st.
+  - (* (st, st') ∈ [[skip; c]] -> (st, st') ∈ [[c]] *)
+    simpl in *; In_inversion.
+    subst.
+    In_intro; assumption.
+  - (* (st, st') ∈ [[c]] -> (st, st') ∈ [[skip; c]] *)
+    (* In this case, we need to show that (st, st') ∈ [[skip; c]] by
+       giving an intermediate state [st''], such that (st, st'') ∈
+       [[skip]] and (st'', st') ∈ [[c]]. Since [[skip]] only contains
+       pairs of the same state, the state [st] fits the bill.  *)
+    simpl in *. In_intro.
+    exists st; split.
     + reflexivity.
     + assumption.
+Qed.
+
+(* Using the denotational semantics of commands, we can show that if
+   the condition of an if expression is equivalent to true, the entire
+   expression is semantically equivalent to the then branch: *)
+
+Theorem if_true: forall b c1 c2,
+  bexp_eqv b <{true}>  ->
+  com_eqv
+    <{ if b then c1 else c2 end }>
+    c1.
+Proof.
+  intros b c1 c2 Hb.
+  split; intros (st, st') st_In.
+  - (* We need to show that (st, st') ∈ [[<{ if b then c1 else c2 end }>]]
+       implies (st, st') ∈ [[c1]] *)
+    (* By simplifying [[<{ if b then c1 else c2 end }>]], we can do
+       case analysis on what must be true of (st, st') if it is a
+       member of that set. *)
+    simpl in st_In; In_inversion.
+    + (* In particular, either ([[b ]]B) ∈ (true, st) or ([[b ]]B) ∈ (false, st). *)
+      (* The first case follows trivially. *)
+      assumption.
+    + (* In the second case, [[b ]]B ∈ (false, st) contradicts our assumption that
+         [[b]]B ⊆ [[<{ true }>]]B  *)
+      destruct Hb.
+      simpl in H1.
+      apply H1 in H.
+      In_inversion.
+  - (* In the other direction, We need to show that (st, st') ∈ [[c1]] implies
+       (st, st') ∈ [[<{ if b then c1 else c2 end }>]].
+
+      Here, it suffices to show that
+      (st, st') ∈ {{(st0, st'0) | (true, st0) ∈ [[b ]]B /\ (st0, st'0) ∈ [[c1]]}},
+      which follows immediately from the assumption that (st, st') ∈ [[c1]] and
+      [[<{ true }>]]B ⊆ [[b]]B.*)
+    simpl. left; split.
+    + destruct Hb as [b_sub_tre true_sub_b].
+      apply true_sub_b. simpl. In_intro.
+    + apply st_In.
 Qed.
 
 (* To show that LFP is a proper fixed point in subsequent proofs, we
@@ -181,19 +385,17 @@ Lemma while_body_monotone :
 Proof.
   unfold Monotone, Subset; intros.
   In_inversion.
-  intuition.
-  - subst; left; intuition.
-  - destruct H1 as [st' [? [? ?] ] ].
-    right; eexists _; intuition; try eassumption.
+  - In_intro. subst; left; split; try assumption; reflexivity.
+  - right; eexists _; intuition; try eassumption.
     apply H; eassumption.
 Qed.
 
 Lemma If_while_eq :
   forall b c,
-    com_eq <{while b do c end}>
+    com_eqv <{while b do c end}>
     <{if b then (c; while b do c end) else skip end }>.
 Proof.
-  unfold com_eq; intros.
+  unfold com_eqv; intros.
   eapply Same_set_trans.
   simpl; apply LFP_unfold.
   apply while_body_monotone.
@@ -201,58 +403,49 @@ Proof.
   split; intros x In_x.
   - In_inversion.
     (* The denotation of [if] is built from the denotations of each branch *)
-    destruct In_x.
     + right. intuition. subst.
       reflexivity.
-    + destruct H as [st' [? [? ?] ] ].
-      left. intuition.
+    + left. intuition.
       eexists; intuition; eassumption.
   - In_inversion.
-    intuition.
-    + In_inversion.
-      destruct H1 as [st' [? ?] ].
-      right. eexists. intuition. eassumption.
+    + right. eexists. intuition. eassumption.
       apply H1.
     + left. intuition.
 Qed.
 
-(* We can show that program equivalence is a /congruence/: that two
+(* We can show that command equivalence is a /congruence/: that two
    programs are equivalent if their subterms are equivalent.
 
    The first step is to show this holds for individual commands. *)
 Lemma seq_eq_cong : forall c1 c2 c1' c2',
-    com_eq c1 c1' ->
-    com_eq c2 c2' ->
-    com_eq <{c1; c2}> <{c1'; c2'}>.
+    com_eqv c1 c1' ->
+    com_eqv c2 c2' ->
+    com_eqv <{c1; c2}> <{c1'; c2'}>.
 Proof.
-  intros; split; simpl; intros x X_In; In_inversion.
-  - destruct X_In as [st' [? ?] ].
-    exists st'; split.
+  intros; split; simpl; intros (st, st') X_In; In_inversion.
+  - exists x; split.
     + apply H; assumption.
     + apply H0; assumption.
-  - destruct X_In as [st' [? ?] ].
-    exists st'; split.
+  - exists x; split.
     + apply H; assumption.
     + apply H0; assumption.
 Qed.
 
 Lemma if_eq_cong : forall b c1 c2 c1' c2',
-    com_eq c1 c1' ->
-    com_eq c2 c2' ->
-    com_eq <{if b then c1 else c2 end}> <{if b then c1' else c2' end}>.
+    com_eqv c1 c1' ->
+    com_eqv c2 c2' ->
+    com_eqv <{if b then c1 else c2 end}> <{if b then c1' else c2' end}>.
 Proof.
   intros; split; simpl; intros x X_In; In_inversion.
-  - intuition.
-    + left; intuition. apply H. assumption.
-    + right; intuition. apply H0. assumption.
-  - intuition.
-    + left; intuition. apply H. assumption.
-    + right; intuition. apply H0. assumption.
+  - left; intuition. apply H. assumption.
+  - right; intuition. apply H0. assumption.
+  - left; intuition. apply H. assumption.
+  - right; intuition. apply H0. assumption.
 Qed.
 
 Lemma while_eq_cong : forall b c1 c1',
-    com_eq c1 c1' ->
-    com_eq <{while b do c1 end}> <{while b do c1' end}>.
+    com_eqv c1 c1' ->
+    com_eqv <{while b do c1 end}> <{while b do c1' end}>.
 Proof.
   intros; split; simpl; intros x X_In; In_inversion.
   - intuition.
@@ -267,8 +460,7 @@ Proof.
         left; intuition.
       * apply LFP_fold.
         apply while_body_monotone.
-        right. destruct H1 as [st' [? [? ?] ] ].
-        exists st'; intuition.
+        right. exists x; intuition.
         apply H; assumption.
   - intuition.
     + eapply Ind in X_In.
@@ -282,8 +474,8 @@ Proof.
         left; intuition.
       * apply LFP_fold.
         apply while_body_monotone.
-        right. destruct H1 as [st' [? [? ?] ] ].
-        exists st'; intuition.
+        right.
+        exists x; intuition.
         apply H; assumption.
 Qed.
 
@@ -325,8 +517,8 @@ Lemma contextual_equivalence :
   forall c1 c2 ctx c1' c2',
     Plug c1 ctx c1' ->
     Plug c2 ctx c2' ->
-    com_eq c1 c2 ->
-    com_eq c1' c2'.
+    com_eqv c1 c2 ->
+    com_eqv c1' c2'.
 Proof.
   induction ctx; intros; inversion H; inversion H0; subst.
   - intuition.
@@ -502,16 +694,14 @@ Proof.
       apply IHc2; eassumption.
   - apply LFP_unfold in denote_c; try apply while_body_monotone.
     In_inversion.
-    destruct denote_c as [ [denote_b st_eq]
-                         | [st'' [denote_b [denote_c ? ] ] ] ].
-    + rewrite st_eq; econstructor.
+    + rewrite H0; econstructor.
       erewrite BigStep_B_Denotational_Adequate; try reflexivity; assumption.
     + eapply E_WhileTrue.
       erewrite BigStep_B_Denotational_Adequate; try reflexivity; assumption.
       apply IHc; eassumption.
-      replace st'' with (fst (st'', st')) by reflexivity.
-      replace st' with (snd (st'', st')) at 2 by reflexivity.
-      pattern (st'', st').
+      replace x with (fst (x, st')) by reflexivity.
+      replace st' with (snd (x, st')) at 2 by reflexivity.
+      pattern (x, st').
       (* Hmmmm... we're (almost) back to where we started! *)
       (* Why can't we apply the Inductive Hypothesis? *)
       eapply Ind; try eassumption.
