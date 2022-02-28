@@ -569,3 +569,5 @@ Proof.
   normalize_lambda.
   apply multi_refl.
 Qed.
+
+End LCNat.
