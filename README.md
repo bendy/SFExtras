@@ -1,5 +1,5 @@
 This repository holds formalizations of a variety of programming
-language topics in the style of Software Foundations
+language topics in the style of Software Foundations.
 
 To use, you'll need a copy of the latest version of [Software
 Foundations](https://softwarefoundations.cis.upenn.edu/). Once that is
