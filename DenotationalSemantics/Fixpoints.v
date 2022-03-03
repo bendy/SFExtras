@@ -49,7 +49,7 @@ Section Fixpoints.
   Notation "x '∈' e" := (In x e) (at level 60).
 
   Definition even x := exists n : nat, x = 2 * n.
-  
+
   Example even_6 : 6 ∈ even. Proof. unfold In. exists 3. reflexivity. Qed.
 
   Definition Subset {A} (e1 e2 : PSet A) : Prop :=
