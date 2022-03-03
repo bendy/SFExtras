@@ -11,7 +11,8 @@ A deeply embedded formalization of the untyped lambda calculus with
 natural numbers, as well as a number of examples of church-encoded
 datatypes (namely booleans, pairs, natural numbers, and lists).
 
-- Church.v: language definitions a church encoding examples
+- LCNat.v: a formalization of the untyped lambda calculus with natural numbers
+- Church.v: several church encoding examples
 
 ## DenotationalSemantics
 The denotational semantics of a simple imperative language.
