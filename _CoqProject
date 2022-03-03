@@ -1,0 +1,8 @@
+-Q plf PLF
+-Q lf LF
+-Q DenotationalSemantics DS
+-Q ChurchEncodings Church
+ChurchEncodings/LCNat.v
+ChurchEncodings/Church.v
+DenotationalSemantics/Fixpoints.v
+DenotationalSemantics/Denotational.v
