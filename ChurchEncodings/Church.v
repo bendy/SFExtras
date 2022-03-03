@@ -110,10 +110,27 @@ Definition zero_church :=
 Definition three_church :=
   <{\s, \z, s (s (s z))}>.
 
-(* If we supply tm_succ for the recursive case, and tm_zero for the
-   base case, we can convert this number to the primitive numbers. *)
+(* To make it easier to read numbers, we can define a lambda
+   expression that converts a church-encoded natural number to a
+   representation using our calculi's built-in numbers.
+
+   This conversion function takes a number and applies tm_succ for the
+   recursive case, and tm_zero for the base case. *)
+Definition toNat_church :=
+  <{\n, n (\z, S z) tm_zero}>.
+
+(* The chuch encoded numbers from above produce the expected primitive
+   value. *)
+
+Example zero_church_ex :
+  <{toNat_church zero_church}> -->* <{tm_zero}>.
+Proof.
+  normalize_lambda.
+  apply multi_refl.
+Qed.
+
 Example three_church_ex :
-  <{three_church (\z, S z) tm_zero}> -->* <{S (S (S tm_zero)) }>.
+  <{toNat_church three_church}> -->* <{S (S (S tm_zero)) }>.
 Proof.
   normalize_lambda.
   apply multi_refl.
@@ -130,15 +147,8 @@ Definition one_church :=
 Definition two_church :=
   <{succ_church (succ_church zero_church)}>.
 
-Example church_ex_1 :
-  <{zero_church (\z, S z) tm_zero}> -->* <{tm_zero }>.
-Proof.
-  normalize_lambda.
-  apply multi_refl.
-Qed.
-
-Example church_ex_2 :
-  <{(succ_church zero_church) (\z, S z) tm_zero}> -->* <{S tm_zero }>.
+Example succ_church_ex_2 :
+  <{toNat_church (succ_church zero_church)}> -->* <{S tm_zero }>.
 Proof.
   normalize_lambda.
   apply multi_refl.
@@ -149,7 +159,7 @@ Definition plus_church :=
   <{\x, \y, \s, \z, x s (y s z)}>.
 
 Example plus_ex_1 :
-  <{(plus_church (succ_church zero_church) zero_church) (\z, S z) tm_zero}> -->* <{S tm_zero }>.
+  <{toNat_church (plus_church (succ_church zero_church) zero_church)}> -->* <{S tm_zero }>.
 Proof.
   normalize_lambda.
   apply multi_refl.
@@ -207,21 +217,21 @@ Definition length_church :=
   <{\l, l (\x, succ_church) zero_church }>.
 
 Example length_ex :
-  <{ (length_church nil_church) (\z, S z) tm_zero}> -->* <{tm_zero}>.
+  <{ toNat_church (length_church nil_church)}> -->* <{tm_zero}>.
 Proof.
   normalize_lambda.
   apply multi_refl.
 Qed.
 
 Example length_ex_2 :
-  <{ (length_church one_two_church) (\z, S z) tm_zero}> -->* <{S (S tm_zero)}>.
+  <{ toNat_church (length_church one_two_church)}> -->* <{S (S tm_zero)}>.
 Proof.
   normalize_lambda.
   apply multi_refl.
 Qed.
 
 Example length_ex_3 :
-  <{ (length_church (cons_church three_church one_two_church)) (\z, S z) tm_zero}> -->* <{S (S (S tm_zero))}>.
+  <{ toNat_church (length_church (cons_church three_church one_two_church))}> -->* <{S (S (S tm_zero))}>.
 Proof.
   normalize_lambda.
   apply multi_refl.
@@ -234,14 +244,14 @@ Definition sum_church :=
   <{\l, l (\hd, \tl, plus_church hd tl) zero_church }>.
 
 Example sum_ex :
-  <{ (sum_church nil_church) (\z, S z) tm_zero}> -->* <{tm_zero}>.
+  <{toNat_church (sum_church nil_church)}> -->* <{tm_zero}>.
 Proof.
   normalize_lambda.
   apply multi_refl.
 Qed.
 
 Example sum_ex_2 :
-  <{ (sum_church one_two_church) (\z, S z) tm_zero}> -->* <{S (S (S tm_zero))}>.
+  <{ toNat_church (sum_church one_two_church)}> -->* <{S (S (S tm_zero))}>.
 Proof.
   normalize_lambda.
   apply multi_refl.
@@ -265,7 +275,7 @@ Definition pred_church :=
    predecessor of x.  *)
 
 Example pred_ex :
-  <{ pred_church three_church (\z, S z) tm_zero }> -->* <{S (S tm_zero)}>.
+  <{ toNat_church (pred_church three_church) }> -->* <{S (S tm_zero)}>.
 Proof.
   normalize_lambda.
   apply multi_refl.
