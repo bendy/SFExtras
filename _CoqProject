@@ -1,5 +1,5 @@
--Q plf PLF
--Q lf LF
+-Q ../SF/plf PLF
+-Q ../SF/lf LF
 -Q DenotationalSemantics DS
 -Q ChurchEncodings Church
 ChurchEncodings/LCNat.v

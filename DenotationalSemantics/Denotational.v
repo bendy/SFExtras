@@ -73,20 +73,21 @@ Fixpoint denote_B (b : bexp) : BExpDom :=
     (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
     /\ (v1 = v2 <-> v = true)}}
 
-  | <{a1 <> a2}> => {{ (v, st) |
+  (* Uncomment to account for larger set of boolean expressions in SF. *)
+  (* | <{a1 <> a2}> => {{ (v, st) |
     exists v1 v2,
     (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
     /\ (v1 = v2 <-> v = false) }}
+
+  | <{ a1 > a2}> => {{ (v, st) |
+    exists v1 v2,
+    (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
+    /\ (v1 > v2 <-> v = true) }} *)
 
   | <{ a1 <= a2}> => {{ (v, st) |
     exists v1 v2,
     (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
     /\ (v1 <= v2 <-> v = true) }}
-
-  | <{ a1 > a2}> => {{ (v, st) |
-    exists v1 v2,
-    (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
-    /\ (v1 > v2 <-> v = true) }}
 
   | <{~ b1}> => {{ (v, st) |  (negb v, st) ∈ [[ b1 ]]B }}
 
@@ -576,24 +577,25 @@ Proof.
     + apply Denotational_A_BigStep_Sound.
     + rewrite H. apply PeanoNat.Nat.eqb_refl.
     + eapply PeanoNat.Nat.eqb_eq; assumption.
+  (* Uncomment to account for larger set of boolean expressions.
   - eexists (aeval st a1), (aeval st a2); intuition.
     + apply Denotational_A_BigStep_Sound.
     + apply Denotational_A_BigStep_Sound.
     + rewrite H, PeanoNat.Nat.eqb_refl; reflexivity.
     + apply Bool.negb_false_iff in H.
       eapply PeanoNat.Nat.eqb_eq; assumption.
-  - eexists (aeval st a1), (aeval st a2); intuition.
-    + apply Denotational_A_BigStep_Sound.
-    + apply Denotational_A_BigStep_Sound.
-    + eapply Compare_dec.leb_correct; assumption.
-    + eapply Compare_dec.leb_complete; assumption.
-  - eexists (aeval st a1), (aeval st a2); intuition.
+    - eexists (aeval st a1), (aeval st a2); intuition.
     + apply Denotational_A_BigStep_Sound.
     + apply Denotational_A_BigStep_Sound.
     + apply Bool.negb_true_iff.
       apply PeanoNat.Nat.leb_gt; assumption.
     + apply Bool.negb_true_iff in H.
-      apply PeanoNat.Nat.leb_gt; assumption.
+      apply PeanoNat.Nat.leb_gt; assumption. *)
+  - eexists (aeval st a1), (aeval st a2); intuition.
+    + apply Denotational_A_BigStep_Sound.
+    + apply Denotational_A_BigStep_Sound.
+    + eapply Compare_dec.leb_correct; assumption.
+    + eapply Compare_dec.leb_complete; assumption.
   - rewrite Bool.negb_involutive. apply IHb.
   - eexists _, _; intuition.
     + apply IHb1.
@@ -673,7 +675,8 @@ Proof.
       assumption.
     + apply EqNat.beq_nat_false in Heqb.
       destruct v; eauto.
-  - destruct H as [v1 [v2 [denote_a1 [denote_a2 v_eq] ] ] ]; subst; simpl.
+  (* Uncomment to account for larger set of boolean expressions in SF. *)
+  (*- destruct H as [v1 [v2 [denote_a1 [denote_a2 v_eq] ] ] ]; subst; simpl.
     apply BigStep_A_Denotational_Adequate in denote_a1.
     apply BigStep_A_Denotational_Adequate in denote_a2.
     subst.
@@ -688,19 +691,19 @@ Proof.
     apply BigStep_A_Denotational_Adequate in denote_a2.
     subst. intuition.
     destruct (Nat.leb (aeval st a1) (aeval st a2)) eqn: ?; intuition.
-    + rewrite H; try reflexivity.
-      apply Compare_dec.leb_complete; assumption.
-    + apply Compare_dec.leb_complete_conv in Heqb.
-      destruct v; eauto; intuition; lia.
+    + destruct v; eauto; intuition.
+      apply Compare_dec.leb_complete in Heqb; lia.
+    + destruct v; eauto; intuition.
+      apply Compare_dec.leb_complete_conv in Heqb; intuition. *)
   - destruct H as [v1 [v2 [denote_a1 [denote_a2 v_eq] ] ] ]; subst; simpl.
     apply BigStep_A_Denotational_Adequate in denote_a1.
     apply BigStep_A_Denotational_Adequate in denote_a2.
     subst. intuition.
     destruct (Nat.leb (aeval st a1) (aeval st a2)) eqn: ?; intuition.
-    + destruct v; eauto; intuition.
-      apply Compare_dec.leb_complete in Heqb; lia.
-    + destruct v; eauto; intuition.
-      apply Compare_dec.leb_complete_conv in Heqb; intuition.
+    + rewrite H; try reflexivity.
+      apply Compare_dec.leb_complete; assumption.
+    + apply Compare_dec.leb_complete_conv in Heqb.
+      destruct v; eauto; intuition; lia.
   - simpl in H; In_inversion.
     simpl; rewrite IHb with (v := negb v).
     + apply Bool.negb_involutive.

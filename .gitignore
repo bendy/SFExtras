@@ -1,0 +1,10 @@
+*.aux
+*.vo
+*.vos
+*.glob
+*.vok
+/.DS_Store
+/.CoqMakefile.d
+/.lia.cache
+/CoqMakefile
+*.lia.cache
