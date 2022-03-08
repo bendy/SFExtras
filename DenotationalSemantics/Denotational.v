@@ -16,8 +16,9 @@ Declare Scope denote_scope.
 
 Notation "{{ v | P }}" := (fun v => P) (v pattern) : denote_scope.
 
-
 Open Scope denote_scope.
+
+(* ====== Denotational Semantics of Arithmetic Expressions ======= *)
 
 (* The semantic domain for arithmetic expressions is pairs of states
    and numbers: *)
@@ -30,21 +31,24 @@ Open Scope denote_scope.
 Fixpoint denote_A (a : aexp) : AExpDom :=
   match a with
   | ANum n => {{ ( m, st ) | m = n }}
-
+  (* ⟦x⟧A ≡ {(σ, σ(x))} *)
   | AId x  => {{ ( m, st ) |  m = st x }}
 
+  (* ⟦a1+a2⟧A ≡ {(σ, n + m) | (σ, n) ∈ ⟦a1⟧A ∧ (σ, m) ∈ ⟦a2⟧A} *)
   | <{a1 + a2}> => {{ (n', st) |
                       exists v1 v2,
                       (v1, st) ∈ [[ a1 ]]A
                       /\ (v2, st) ∈ [[ a2 ]]A
                       /\ n' = v1 + v2 }}
 
+  (* ⟦a1-a2⟧A ≡ {(σ, n - m) | (σ, n) ∈ ⟦a1⟧A  ∧ (σ, m) ∈ ⟦a2⟧A} *)
   | <{a1 - a2}> => {{ (n', st) |
                       exists v1 v2,
                       (v1, st) ∈ [[ a1 ]]A
                       /\ (v2, st) ∈ [[ a2 ]]A
                       /\ n' = v1 - v2 }}
 
+  (* ⟦a1*a2⟧A ≡ {(σ, n * m) | (σ, n) ∈ ⟦a1⟧A  ∧ (σ, m) ∈ ⟦a2⟧A} *)
   | <{a1 * a2}> => {{ (n', st) |
                       exists v1 v2,
                       (v1, st) ∈ [[ a1 ]]A
@@ -104,8 +108,242 @@ Proof.
     exists (n * m); In_intro; simpl; eexists _, _; repeat split; assumption.
 Qed.
 
+(* Two expressions are semantically equivalent if their denotation is
+   the same set of states and values. *)
+Definition aexp_eqv (a a' : aexp) : Prop :=
+  Same_set ([[ a ]]A) ([[ a' ]]A).
+
+Notation "a1 '==A' a2 " := (aexp_eqv a1 a2) (at level 40).
+
+(* Since expression equivalence is defined in terms of set
+   equivalence, we can obtain proofs that it is reflexive,
+   transititve, and symmetric for 'free'. *)
+Lemma aexp_eqv_refl : forall (a : aexp),
+    a ==A a.
+Proof. intro; apply Same_set_refl. Qed.
+
+Lemma aexp_eqv_sym : forall (a1 a2 : aexp),
+    a1 ==A a2 -> a2 ==A a1.
+Proof. intros; apply Same_set_sym; assumption. Qed.
+
+Lemma aexp_eqv_trans : forall (a1 a2 a3 : aexp),
+    a1 ==A a2 -> a2 ==A a3 -> a1 ==A a3.
+Proof. intros; eapply Same_set_trans; eassumption. Qed.
+
+(* We can use the following command to register the fact that our
+   notion of equivalence for arithmetic expressions is actually an
+   equivalence relation. This allows us to use the [reflexivity],
+   [symmetry], and [transitivity] tactics with goals and assumptions
+   about arithmetic equivalence, just as we can with regular
+   equality. *)
+Add Parametric Relation : aexp aexp_eqv
+    reflexivity  proved by aexp_eqv_refl
+    symmetry proved by aexp_eqv_sym
+    transitivity proved by aexp_eqv_trans
+    as eqv_aexp_eqv.
+
+Example aexp_tactic_ex : forall (a1 a2 a3 : aexp),
+    a1 ==A a2 -> a3 ==A a2 -> a1 ==A a3.
+Proof.
+  intros.
+  symmetry in H.
+  symmetry.
+  transitivity a2.
+  assumption.
+  assumption.
+Qed.
+
+(* We can reason about equivalence of two expressions by reasoning
+   about their denotations, allowing us to use any lemmas or theorems
+   about sets. *)
+Example aexp_eqv_example: <{ X + Y }> ==A <{ Y + X }>.
+Proof.
+  (* To show two expressions are equivalent, we need to prove their
+  denotations are the same. That is, we need to show that every
+  element in the denotation of [X + Y] is included in [Y + X] and vice
+  versa. *)
+  split; intros (n, st) In_st.
+  - (* In the first case, we need to show that
+       (n, st) ∈ [[X + Y]]A implies  (n, st) ∈ [[Y + X]]A *)
+  (* [In_inversion] is a custom tactic for working with assumptions
+     about memembership in a set. It is defined in Fixpoints.v *)
+    simpl in In_st. In_inversion. subst.
+    (* [In_intro] is a custom tactic for working with goals about set
+       memembership, it is also defined in Fixpoints.v *)
+    simpl. In_intro.
+    exists (st Y), (st X); repeat split. lia.
+  - (* In the second case, we need to show that
+       (n, st) ∈ [[Y + X]]A implies  (n, st) ∈ [[X + Y]]A *)
+    simpl in In_st. In_inversion.
+    In_intro.
+    eexists (st X), (st Y); repeat split.
+    lia.
+Qed.
+
+Example aexp_eqv_example_2 :
+  forall (a : aexp), <{ 0 + a }> ==A <{ a }>.
+Proof.
+  split; simpl; intros (n, st) In_st.
+  - In_inversion. subst. assumption.
+  - In_inversion.
+    In_intro.
+    eexists _, _; repeat split; try assumption.
+Qed.
+
+Example aexp_eqv_example_3 :
+  forall (a : aexp), <{ a - a }> ==A <{ 0 }>.
+Proof.
+  split; simpl; intros (n, st) In_st.
+  - In_inversion. subst.
+    erewrite aexp_eqv_unique with (m := x) (n := x0) by eassumption.
+    In_intro; lia.
+  - In_inversion.
+    In_intro.
+    destruct (denote_aexp_defined a st) as [m denote_a].
+    exists m, m; repeat split; try assumption.
+    lia.
+Qed.
+
+(* Semantic equivalence gives us a natural specification of the
+   correctness of a program transformation: *)
+Fixpoint aexp_opt_zero (a : aexp) : aexp :=
+match a with
+| ANum n => ANum n
+| AId X => AId X
+| APlus (ANum 0) e2 => aexp_opt_zero e2
+| APlus e1 e2 => APlus (aexp_opt_zero e1) (aexp_opt_zero e2)
+| AMinus e1 e2 => AMinus (aexp_opt_zero e1) (aexp_opt_zero e2)
+| AMult e1 e2 => AMult (aexp_opt_zero e1) (aexp_opt_zero e2)
+end.
+
+Theorem aexp_opt_zero_sound
+  : forall a, aexp_opt_zero a ==A a.
+Proof.
+  (* New *tactical* alert: *)
+  induction a; simpl.
+  - reflexivity.
+  - reflexivity.
+  - (* We could proceed by case analysis on [a1], but this is a golden
+    opportunity to explore Coq's support for equational reasoning with
+    equivalences like aexp_eqv. *)
+Abort.
+
+(* The semantics of arithemetic expressions is /compositional/: the
+   meaning of an expression is derived from meaning of its
+   subexpressions. We can exploit this property to show that
+   expression equivalence is a /congruence/: that two expressions are
+   equivalent if their subexpressions are equivalent.  *)
+Lemma plus_eqv_cong : forall a1 a2 a1' a2',
+    a1 ==A a1' ->
+    a2 ==A a2' ->
+    <{a1 + a2}> ==A <{a1' + a2'}>.
+Proof.
+  intros a1 a2 a1' a2' a1_eqv a2_eqv.
+  split; intros (a, st) v_In.
+  - (* Since [[a1 + a2]]A and [[a1' + a2']]A are built from the
+       results of [[a1]]A, [[a2]]A, [[a1']]A, and [[a2]]A, their
+       equivalence follows from the assumptions that [[a1]]A and
+       [[a2]]A are equivalent to [[a1']]A [[a2']]A *)
+    simpl in *; In_inversion; In_intro.
+    exists x, x0.
+    repeat split; try tauto.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+  - simpl in *; In_inversion; In_intro.
+    exists x, x0.
+    repeat split; try tauto.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+Qed.
+
+(* It turns out that Coq includes built in support for a generalized
+   form of rewriting using equivalence relations. In order for
+   rewriting to work however, we have to demonstrate which cases they
+   work in. This amounts to proving congruences like the lemma above,
+   but we also have to use a specialized Command to let Coq know that
+   we're extending the behavior of the [rewrite] tactic.
+
+   The 'Generalized Rewriting' chapter of Coq's documentation has the
+   full details on all the bells and whistles of this feature, but
+   we'll just give a taste of how this works here. *)
+
+Add Parametric Morphism : APlus
+    with signature aexp_eqv ==> aexp_eqv ==> aexp_eqv
+      as plus_eqv_cong'.
+Proof.
+  intros; apply plus_eqv_cong; assumption.
+Qed.
+
+(* We can skip the process by proving the desired congruence fact
+   directly: *)
+(* Lemma minus_eqv_cong : forall a1 a2 a1' a2',
+    a1 ==A a1' ->
+    a2 ==A a2' ->
+    <{a1 - a2}> ==A <{a1' - a2'}>.
+Proof. *)
+
+Add Parametric Morphism : AMinus
+    with signature aexp_eqv ==> aexp_eqv ==> aexp_eqv
+      as minus_eqv_cong.
+Proof.
+  intros a1 a1' a1_eqv a2 a2' a2_eqv; split;
+    simpl; intros (a, st) v_In; In_inversion.
+  - In_intro.
+    exists x, x0.
+    repeat split; try tauto.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+  - In_intro.
+    exists x, x0.
+    repeat split; try tauto.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+Qed.
+
+(* Lemma mult_eqv_cong : forall a1 a2 a1' a2',
+    a1 ==A a1' ->
+    a2 ==A a2' ->
+    <{a1 * a2}> ==A <{a1' * a2'}>. *)
+Add Parametric Morphism : AMult
+    with signature aexp_eqv ==> aexp_eqv ==> aexp_eqv
+      as mult_eqv_cong.
+Proof.
+  intros a1 a1' a1_eqv a2 a2' a2_eqv; split;
+    simpl; intros (a, st) v_In; In_inversion.
+  - In_intro.
+    exists x, x0.
+    repeat split; try tauto.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+  - In_intro.
+    exists x, x0.
+    repeat split; try tauto.
+    + apply a1_eqv; assumption.
+    + apply a2_eqv; assumption.
+Qed.
+
+Theorem aexp_opt_zero_sound
+  : forall a, aexp_opt_zero a ==A a.
+Proof.
+  induction a; simpl.
+  - reflexivity.
+  - reflexivity.
+  - (* Having done all this work, our standard rewrite tactics now
+    work with assumptions and goals involving ==A! *)
+    rewrite <- IHa1 at 2.
+    rewrite <- IHa2.
+    destruct a1; simpl; try reflexivity.
+    destruct n; try reflexivity.
+    rewrite aexp_eqv_example_2.
+    reflexivity.
+  - rewrite IHa1, IHa2. reflexivity.
+  - rewrite IHa1, IHa2. reflexivity.
+Qed.
+
+(* ====== Denotational Semantics of Boolean Expressions ======= *)
+
 (* The semantic domain for boolean expressions is pairs of states
-   and numbers:
+   and booleans:
 
    ⟦true⟧B ≡ {(σ, true)}
    ⟦false⟧B ≡ {(σ, false)}
@@ -151,55 +389,10 @@ Fixpoint denote_B (b : bexp) : BExpDom :=
   end
 where "'[[' b ']]B'" := (denote_B b).
 
-(* Two expressions are semantically equivalent if their denotation is
-   the same set of states and values. *)
-Definition aexp_eqv (a a' : aexp) : Prop :=
-  Same_set ([[ a ]]A) ([[ a' ]]A).
-
 Definition bexp_eqv (b b' : bexp) : Prop :=
   Same_set ([[ b ]]B) ([[ b' ]]B).
 
-Notation "a1 '==A' a2 " := (aexp_eqv a1 a2) (at level 40).
 Notation "b1 '==B' b2 " := (bexp_eqv b1 b2) (at level 40).
-
-(* Since expression equivalence is defined in terms of set
-   equivalence, we can obtain proofs that it is reflexive,
-   transititve, and symmetric for 'free'. *)
-
-Lemma aexp_eqv_refl : forall (a : aexp),
-    a ==A a.
-Proof. intro; apply Same_set_refl. Qed.
-
-Lemma aexp_eqv_sym : forall (a1 a2 : aexp),
-    a1 ==A a2 -> a2 ==A a1.
-Proof. intros; apply Same_set_sym; assumption. Qed.
-
-Lemma aexp_eqv_trans : forall (a1 a2 a3 : aexp),
-    a1 ==A a2 -> a2 ==A a3 -> a1 ==A a3.
-Proof. intros; eapply Same_set_trans; eassumption. Qed.
-
-(* We can use the following command to register the fact that our
-   notion of equivalence for arithmetic expressions is actually an
-   equivalence relation. This allows us to use the [reflexivity],
-   [symmetry], and [transitivity] tactics with goals and assumptions
-   about arithmetic equivalence, just as we can with regular
-   equality. *)
-Add Parametric Relation : aexp aexp_eqv
-    reflexivity  proved by aexp_eqv_refl
-    symmetry proved by aexp_eqv_sym
-    transitivity proved by aexp_eqv_trans
-    as eqv_aexp_eqv.
-
-Example aexp_tactic_ex : forall (a1 a2 a3 : aexp),
-    a1 ==A a2 -> a3 ==A a2 -> a1 ==A a3.
-Proof.
-  intros.
-  symmetry in H.
-  symmetry.
-  transitivity a2.
-  assumption.
-  assumption.
-Qed.
 
 Lemma bexp_eqv_refl : forall (b : bexp),
     b ==B b.
@@ -219,48 +412,6 @@ Add Parametric Relation : bexp bexp_eqv
     transitivity proved by bexp_eqv_trans
     as eqv_bexp_eqv.
 
-(* We can reason about equivalence of two expressions by reasoning
-   about their denotations, allowing us to use any lemmas or theorems
-   about sets. *)
-
-Theorem aexp_eqv_example: <{ X + Y }> ==A <{ Y + X }>.
-Proof.
-  (* To show two expressions are equivalent, we need to prove their
-  denotations are the same. That is, we need to show that every
-  element in the denotation of [X + Y] is included in [Y + X] and vice
-  versa. *)
-  split; intros (n, st) In_st.
-  - (* In the first case, we need to show that
-       (n, st) ∈ [[X + Y]]A implies  (n, st) ∈ [[Y + X]]A *)
-  (* [In_inversion] is a custom tactic for working with assumptions
-     about memembership in a set. It is defined in Fixpoints.v *)
-    simpl in In_st. In_inversion. subst.
-    (* [In_intro] is a custom tactic for working with goals about set
-       memembership, it is also defined in Fixpoints.v *)
-    simpl. In_intro.
-    exists (st Y), (st X); repeat split. lia.
-  - (* In the second case, we need to show that
-       (n, st) ∈ [[Y + X]]A implies  (n, st) ∈ [[X + Y]]A *)
-    simpl in In_st. In_inversion.
-    In_intro.
-    eexists (st X), (st Y); repeat split.
-    lia.
-Qed.
-
-Theorem aexp_eqv_example_2 :
-  forall (a : aexp), <{ a - a }> ==A <{ 0 }>.
-Proof.
-  split; simpl; intros (n, st) In_st.
-  - In_inversion. subst.
-    erewrite aexp_eqv_unique with (m := x) (n := x0) by eassumption.
-    In_intro; lia.
-  - In_inversion.
-    In_intro.
-    destruct (denote_aexp_defined a st) as [m denote_a].
-    exists m, m; repeat split; try assumption.
-    lia.
-Qed.
-
 Theorem beq_eqv_example : forall a, <{ a = a }> ==B <{ true }>.
 Proof.
   split; simpl; intros (n, st) In_st.
@@ -275,23 +426,20 @@ Proof.
     subst; reflexivity.
 Qed.
 
-(* The semantics of boolean expressions is /compositional/: the
-   meaning of an expression is derived from meaning of its
-   subexpressions. We can exploit this property to show that
-   expression equivalence is a /congruence/: that two expressions are
-   equivalent if their subexpressions are equivalent.  *)
-Lemma beq_eqv_cong : forall a1 a2 a1' a2',
+(* We can once again prove some congrence facts about the
+   compositionality of equivalence of boolean expressions: *)
+
+(*Lemma beq_eqv_cong : forall a1 a2 a1' a2',
     a1 ==A a1' ->
     a2 ==A a2' ->
-    <{a1 = a2}> ==B <{a1' = a2'}>.
+    <{a1 = a2}> ==B <{a1' = a2'}>. *)
+Add Parametric Morphism : BEq
+    with signature aexp_eqv ==> aexp_eqv ==> bexp_eqv
+      as beq_eqv_cong.
 Proof.
-  intros a1 a2 a1' a2' a1_eqv a2_eqv.
+  intros a1 a1' a1_eqv a2 a2' a2_eqv.
   split; intros (b, st) v_In.
-  - (* Since [[a1 = a2]]B and [[a1' = a2']]B are built from the
-       results of [[a1]]A, [[a2]]A, [[a1']]A, and [[a2]]A, their
-       equivalence follows from the assumptions that [[a1]]A and
-       [[a2]]A are equivalent to [[a1']]A [[a2']]A *)
-    simpl in *; In_inversion; In_intro.
+  - simpl in *; In_inversion; In_intro.
     exists x, x0.
     repeat split; try tauto.
     + apply a1_eqv; assumption.
@@ -303,26 +451,6 @@ Proof.
     + apply a2_eqv; assumption.
 Qed.
 
-(* It turns out that Coq includes built in support for a generalized
-   form of rewriting using equivalence relations. In order for
-   rewriting to work however, we have to demonstrate which cases they
-   work in. This amounts to proving congruences like the lemma above,
-   but we also have to use a specialized Command to let Coq know that
-   we're extending the behavior of the [rewrite] tactic.
-
-   The 'Generalized Rewriting' chapter of Coq's documentation has the
-   full details on all the bells and whistles of this feature, but
-   we'll just give a taste of how this works here. *)
-
-Add Parametric Morphism : BEq
-    with signature aexp_eqv ==> aexp_eqv ==> bexp_eqv
-      as beq_eqv_cong'.
-Proof.
-  intros; apply beq_eqv_cong; assumption.
-Qed.
-
-(* We can skip the process by proving the desired congruence fact
-   directly: *)
 (* Lemma ble_eqv_cong : forall a1 a2 a1' a2',
     a1 ==A a1' ->
     a2 ==A a2' ->
@@ -362,7 +490,6 @@ Qed.
     b1 ==B b1' ->
     b2 ==B b2' ->
     <{b1 && b2}> ==B <{b1' && b2'}>. *)
-
 Add Parametric Morphism : BAnd
     with signature bexp_eqv ==> bexp_eqv ==> bexp_eqv
       as band_eqv_cong.
@@ -388,7 +515,7 @@ Proof.
   transitive to simplify the left-hand side of the equality. *)
   eapply bexp_eqv_trans with (b2 := <{0 = 0}>).
   - apply beq_eqv_cong.
-    + apply aexp_eqv_example_2.
+    + apply aexp_eqv_example_3.
     + reflexivity.
   - split; simpl; intros (b, st) v_In; In_inversion; In_intro; subst.
     + apply H1; reflexivity.
@@ -400,10 +527,12 @@ Qed.
 Theorem bexp_eqv_example': <{ X - X = 0 }> ==B <{ true }>.
 Proof.
   intros.
-  rewrite aexp_eqv_example_2.
+  rewrite aexp_eqv_example_3.
   rewrite beq_eqv_example.
   reflexivity.
 Qed.
+
+(* ======== Denotational Semantics of Imp Commands ========= *)
 
 (* The semantic domain for commands is pairs of initial and final
    states: *)
@@ -484,6 +613,113 @@ Add Parametric Relation : com com_eqv
     transitivity proved by com_eqv_trans
     as eqv_com_eqv.
 
+(* We can again show that command equivalence is a /congruence/: that two
+   programs are equivalent if their subterms are equivalent.
+
+   The first step is to show this holds for individual commands.
+
+Lemma seq_eq_cong : forall c1 c2 c1' c2',
+    c1 ==C c1' ->
+    c2 ==C c2' ->
+    <{c1; c2}> ==C <{c1'; c2'}>. *)
+Add Parametric Morphism : CSeq
+    with signature com_eqv ==> com_eqv ==> com_eqv
+      as seq_eq_cong.
+Proof.
+  intros; split; simpl; intros (st, st') X_In; In_inversion.
+  - exists x1; split.
+    + apply H; assumption.
+    + apply H0; assumption.
+  - exists x1; split.
+    + apply H; assumption.
+    + apply H0; assumption.
+Qed.
+
+(* Lemma if_eq_cong : forall b c1 c2 c1' c2',
+    c1 ==C c1' ->
+    c2 ==C c2' ->
+    <{if b then c1 else c2 end}> ==C <{if b then c1' else c2' end}>. *)
+Add Parametric Morphism : CIf
+    with signature bexp_eqv ==> com_eqv ==> com_eqv ==> com_eqv
+      as if_eq_cong.
+Proof.
+  intros; split; simpl; intros ? X_In; In_inversion.
+  - left; intuition.
+    + apply H. assumption.
+    + apply H0. assumption.
+  - right; intuition.
+    + apply H. assumption.
+    + apply H1. assumption.
+  - left; intuition.
+    + apply H. assumption.
+    + apply H0. assumption.
+  - right; intuition.
+    + apply H. assumption.
+    + apply H1. assumption.
+Qed.
+
+(* To show that LFP is a proper fixed point in subsequent proofs, we
+   need to show that if is applied to a monotone function. *)
+Lemma while_body_monotone :
+  forall b c,
+    Monotone (fun (phi : PSet _) =>
+           {{ (st, st') |
+              ((false, st) ∈ [[b]]B /\ st' = st)
+               \/ (exists st'',
+                      (true, st) ∈ [[b]]B /\
+                      (st, st'') ∈ [[c]]
+                      /\  (st'', st') ∈ phi) }}).
+Proof.
+  unfold Monotone, Subset; intros.
+  In_inversion.
+  - In_intro. subst; left; split; try assumption; reflexivity.
+  - right; eexists _; intuition; try eassumption.
+    apply H; eassumption.
+Qed.
+
+(* Lemma while_eq_cong : forall b c1 c1',
+    c1 ==C c1' ->
+    <{while b do c1 end}> ==C <{while b do c1' end}>. *)
+Add Parametric Morphism : CWhile
+    with signature bexp_eqv ==> com_eqv ==> com_eqv
+      as while_eq_cong.
+Proof.
+  intros; split; simpl; intros ? X_In; In_inversion.
+  - intuition.
+    + eapply Ind in X_In.
+      apply X_In.
+      unfold FClosed.
+      intros ? ?.
+      In_inversion.
+      intuition; subst.
+      * apply LFP_fold.
+        apply while_body_monotone.
+        left; intuition.
+        apply H; assumption.
+      * apply LFP_fold.
+        apply while_body_monotone.
+        right. exists x1; intuition.
+        -- apply H; assumption.
+        -- apply H0; assumption.
+  - intuition.
+    + eapply Ind in X_In.
+      apply X_In.
+      unfold FClosed.
+      intros ? ?.
+      In_inversion.
+      intuition; subst.
+      * apply LFP_fold.
+        apply while_body_monotone.
+        left; intuition.
+        apply H; assumption.
+      * apply LFP_fold.
+        apply while_body_monotone.
+        right.
+        exists x1; intuition.
+        -- apply H; assumption.
+        -- apply H0; assumption.
+Qed.
+
 (* Using the denotational semantics of commands, we can prove that
    programs have the same meaning: *)
 Lemma seq_skip_opt :
@@ -543,25 +779,6 @@ Proof.
     + apply st_In.
 Qed.
 
-(* To show that LFP is a proper fixed point in subsequent proofs, we
-   need to show that if is applied to a monotone function. *)
-Lemma while_body_monotone :
-  forall b c,
-    Monotone (fun (phi : PSet _) =>
-           {{ (st, st') |
-              ((false, st) ∈ [[b]]B /\ st' = st)
-               \/ (exists st'',
-                      (true, st) ∈ [[b]]B /\
-                      (st, st'') ∈ [[c]]
-                      /\  (st'', st') ∈ phi) }}).
-Proof.
-  unfold Monotone, Subset; intros.
-  In_inversion.
-  - In_intro. subst; left; split; try assumption; reflexivity.
-  - right; eexists _; intuition; try eassumption.
-    apply H; eassumption.
-Qed.
-
 Lemma If_while_eq :
   forall b c,
     <{while b do c end}> ==C <{if b then (c; while b do c end) else skip end }>.
@@ -582,149 +799,6 @@ Proof.
     + right. eexists. intuition. eassumption.
       apply H1.
     + left. intuition.
-Qed.
-
-(* We can again show that command equivalence is a /congruence/: that two
-   programs are equivalent if their subterms are equivalent.
-
-   The first step is to show this holds for individual commands.
-
-Lemma seq_eq_cong : forall c1 c2 c1' c2',
-    c1 ==C c1' ->
-    c2 ==C c2' ->
-    <{c1; c2}> ==C <{c1'; c2'}>. *)
-Add Parametric Morphism : CSeq
-    with signature com_eqv ==> com_eqv ==> com_eqv
-      as seq_eq_cong.
-Proof.
-  intros; split; simpl; intros (st, st') X_In; In_inversion.
-  - exists x1; split.
-    + apply H; assumption.
-    + apply H0; assumption.
-  - exists x1; split.
-    + apply H; assumption.
-    + apply H0; assumption.
-Qed.
-
-(* Lemma if_eq_cong : forall b c1 c2 c1' c2',
-    c1 ==C c1' ->
-    c2 ==C c2' ->
-    <{if b then c1 else c2 end}> ==C <{if b then c1' else c2' end}>. *)
-Add Parametric Morphism : CIf
-    with signature bexp_eqv ==> com_eqv ==> com_eqv ==> com_eqv
-      as if_eq_cong.
-Proof.
-  intros; split; simpl; intros ? X_In; In_inversion.
-  - left; intuition.
-    + apply H. assumption.
-    + apply H0. assumption.
-  - right; intuition.
-    + apply H. assumption.
-    + apply H1. assumption.
-  - left; intuition.
-    + apply H. assumption.
-    + apply H0. assumption.
-  - right; intuition.
-    + apply H. assumption.
-    + apply H1. assumption.
-Qed.
-
-(* Lemma while_eq_cong : forall b c1 c1',
-    c1 ==C c1' ->
-    <{while b do c1 end}> ==C <{while b do c1' end}>. *)
-Add Parametric Morphism : CWhile
-    with signature bexp_eqv ==> com_eqv ==> com_eqv
-      as while_eq_cong.
-Proof.
-  intros; split; simpl; intros ? X_In; In_inversion.
-  - intuition.
-    + eapply Ind in X_In.
-      apply X_In.
-      unfold FClosed.
-      intros ? ?.
-      In_inversion.
-      intuition; subst.
-      * apply LFP_fold.
-        apply while_body_monotone.
-        left; intuition.
-        apply H; assumption.
-      * apply LFP_fold.
-        apply while_body_monotone.
-        right. exists x1; intuition.
-        -- apply H; assumption.
-        -- apply H0; assumption.
-  - intuition.
-    + eapply Ind in X_In.
-      apply X_In.
-      unfold FClosed.
-      intros ? ?.
-      In_inversion.
-      intuition; subst.
-      * apply LFP_fold.
-        apply while_body_monotone.
-        left; intuition.
-        apply H; assumption.
-      * apply LFP_fold.
-        apply while_body_monotone.
-        right.
-        exists x1; intuition.
-        -- apply H; assumption.
-        -- apply H0; assumption.
-Qed.
-
-(* We can encode the idea of 'is a subterm' using contexts-- these are
-   programs with a single hole representing where a command can be
-   plugged in:*)
-Inductive context : Set :=
-    CHole : context
-  | CSeqL : context -> com -> context
-  | CSeqR : com -> context -> context
-  | CIf_T : bexp -> context -> com -> context
-  | CIf_E : bexp -> com -> context -> context
-  | CWhile : bexp -> context -> context.
-
-(* We can define what it means to plug in a hole by defining an
-   inductive proposition. *)
-Inductive Plug : com -> context -> com -> Prop :=
-| plug_hole : forall c, Plug c CHole c
-| plug_seq_L : forall c ctx c1 c2,
-    Plug c ctx c1 ->
-    Plug c (CSeqL ctx c2) <{c1; c2}>
-| plug_seq_R : forall c ctx c1 c2,
-    Plug c ctx c2 ->
-    Plug c (CSeqR c1 ctx) <{c1; c2}>
-| plug_if_then : forall c b ctx c1 c2,
-    Plug c ctx c1 ->
-    Plug c (CIf_T b ctx c2) <{if b then c1 else c2 end}>
-| plug_if_else : forall c b ctx c1 c2,
-    Plug c ctx c2 ->
-    Plug c (CIf_E b c1 ctx) <{if b then c1 else c2 end}>
-| plug_while_body : forall c b ctx cb,
-    Plug c ctx cb ->
-    Plug c (CWhile b ctx) <{while b do cb end}>.
-
-(* We can now show that, program equivalence entails /contextual
-   equivalence/-- that is, plugging them into the same program context
-   results in equivalent programs. *)
-Lemma contextual_equivalence :
-  forall c1 c2 ctx c1' c2',
-    Plug c1 ctx c1' ->
-    Plug c2 ctx c2' ->
-    c1 ==C c2 ->
-    c1' ==C c2'.
-Proof.
-  induction ctx; intros; inversion H; inversion H0; subst.
-  - intuition.
-  - rewrite IHctx with (c1' := c3) (c2' := c6) by assumption.
-    reflexivity.
-  - rewrite IHctx with (c1' := c4) (c2' := c7) by assumption.
-    reflexivity.
-  - rewrite IHctx with (c1' := c3) (c2' := c6) by assumption.
-    reflexivity.
-  - rewrite IHctx with (c1' := c4) (c2' := c7) by assumption.
-    reflexivity.
-  - rewrite IHctx with (c1' := cb) (c2' := cb0) by assumption.
-    reflexivity.
 Qed.
 
 (* Finally, we can show that the denotational and big-step operational
@@ -938,7 +1012,62 @@ Proof.
         apply H.
 Qed.
 
-(* Finally, we can use these soundness and adequacy results to show
+(* We can encode the idea of 'is a subterm' using contexts-- these are
+   programs with a single hole representing where a command can be
+   plugged in:*)
+Inductive context : Set :=
+    CHole : context
+  | CSeqL : context -> com -> context
+  | CSeqR : com -> context -> context
+  | CIf_T : bexp -> context -> com -> context
+  | CIf_E : bexp -> com -> context -> context
+  | CWhile : bexp -> context -> context.
+
+(* We can define what it means to plug in a hole by defining an
+   inductive proposition. *)
+Inductive Plug : com -> context -> com -> Prop :=
+| plug_hole : forall c, Plug c CHole c
+| plug_seq_L : forall c ctx c1 c2,
+    Plug c ctx c1 ->
+    Plug c (CSeqL ctx c2) <{c1; c2}>
+| plug_seq_R : forall c ctx c1 c2,
+    Plug c ctx c2 ->
+    Plug c (CSeqR c1 ctx) <{c1; c2}>
+| plug_if_then : forall c b ctx c1 c2,
+    Plug c ctx c1 ->
+    Plug c (CIf_T b ctx c2) <{if b then c1 else c2 end}>
+| plug_if_else : forall c b ctx c1 c2,
+    Plug c ctx c2 ->
+    Plug c (CIf_E b c1 ctx) <{if b then c1 else c2 end}>
+| plug_while_body : forall c b ctx cb,
+    Plug c ctx cb ->
+    Plug c (CWhile b ctx) <{while b do cb end}>.
+
+(* We can now show that, program equivalence entails /contextual
+   equivalence/-- that is, plugging them into the same program context
+   results in equivalent programs. *)
+Lemma contextual_equivalence :
+  forall c1 c2 ctx c1' c2',
+    Plug c1 ctx c1' ->
+    Plug c2 ctx c2' ->
+    c1 ==C c2 ->
+    c1' ==C c2'.
+Proof.
+  induction ctx; intros; inversion H; inversion H0; subst.
+  - intuition.
+  - rewrite IHctx with (c1' := c3) (c2' := c6) by assumption.
+    reflexivity.
+  - rewrite IHctx with (c1' := c4) (c2' := c7) by assumption.
+    reflexivity.
+  - rewrite IHctx with (c1' := c3) (c2' := c6) by assumption.
+    reflexivity.
+  - rewrite IHctx with (c1' := c4) (c2' := c7) by assumption.
+    reflexivity.
+  - rewrite IHctx with (c1' := cb) (c2' := cb0) by assumption.
+    reflexivity.
+Qed.
+
+(* Finally, we can use our soundness and adequacy results to show
    that contextual equivalence holds for a notion of equivalence
    defined in terms of the operational semantics. *)
 Lemma big_step_contextual_equivalence :
