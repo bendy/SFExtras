@@ -2,6 +2,7 @@ From PLF Require Import Imp.
 From PLF Require Import Maps.
 From DS Require Import Fixpoints.
 From Coq Require Import Lia.
+From Coq Require Import Setoid.
 
 Definition AExpDom := PSet (nat * state).
 Definition BExpDom := PSet (bool * state).
@@ -13,9 +14,7 @@ Reserved Notation "'[[' c ']]'" (at level 40).
 
 Declare Scope denote_scope.
 
-Notation "{{ v | P }}" := (fun v => P)
-                                (v pattern)
-                              : denote_scope.
+Notation "{{ v | P }}" := (fun v => P) (v pattern) : denote_scope.
 
 
 Open Scope denote_scope.
@@ -54,6 +53,57 @@ Fixpoint denote_A (a : aexp) : AExpDom :=
   end
 where "'[[' a ']]A'" := (denote_A a).
 
+(* We can already state and prove some interesting properties about
+   our denotation function!
+
+   Firstly, there exists (at most) one corresponding value for each
+   state in the denotation of an expression. This captures a notion of
+   determinism for an expression. *)
+Theorem aexp_eqv_unique :
+  forall (a : aexp)
+         (m n : nat)
+         (st : state),
+    (m, st) ∈ ([[a ]]A) ->
+    (n, st) ∈ ([[a ]]A) ->
+    m = n.
+Proof.
+  induction a; simpl; intros.
+  - In_inversion. subst. reflexivity.
+  - In_inversion. subst. reflexivity.
+  - In_inversion. subst.
+    erewrite IHa1 with (m := x1) (n := x), IHa2 with (m := x0) (n := x2) by
+      eassumption.
+    reflexivity.
+  - In_inversion. subst.
+    erewrite IHa1 with (m := x1) (n := x), IHa2 with (m := x0) (n := x2) by
+      eassumption.
+    reflexivity.
+  - In_inversion. subst.
+    erewrite IHa1 with (m := x1) (n := x), IHa2 with (m := x0) (n := x2) by
+      eassumption.
+    reflexivity.
+Qed.
+
+(* Secondly, there exists exactly one corresponding value for each
+   state in the denotation of an expression. *)
+Theorem denote_aexp_defined :
+  forall (a : aexp) (st : state),
+  exists n, (n, st) ∈ [[a]]A.
+Proof.
+  intros; induction a.
+  - exists n; In_intro; simpl; reflexivity.
+  - eexists (st x); In_intro; simpl; reflexivity.
+  - destruct IHa1 as [n denote_a1].
+    destruct IHa2 as [m denote_a2].
+    exists (n + m); In_intro; simpl; eexists _, _; repeat split; assumption.
+  - destruct IHa1 as [n denote_a1].
+    destruct IHa2 as [m denote_a2].
+    exists (n - m); In_intro; simpl; eexists _, _; repeat split; assumption.
+  - destruct IHa1 as [n denote_a1].
+    destruct IHa2 as [m denote_a2].
+    exists (n * m); In_intro; simpl; eexists _, _; repeat split; assumption.
+Qed.
+
 (* The semantic domain for boolean expressions is pairs of states
    and numbers:
 
@@ -73,17 +123,6 @@ Fixpoint denote_B (b : bexp) : BExpDom :=
     (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
     /\ (v1 = v2 <-> v = true)}}
 
-  (* Uncomment to account for larger set of boolean expressions in SF. *)
-  (* | <{a1 <> a2}> => {{ (v, st) |
-    exists v1 v2,
-    (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
-    /\ (v1 = v2 <-> v = false) }}
-
-  | <{ a1 > a2}> => {{ (v, st) |
-    exists v1 v2,
-    (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
-    /\ (v1 > v2 <-> v = true) }} *)
-
   | <{ a1 <= a2}> => {{ (v, st) |
     exists v1 v2,
     (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
@@ -95,6 +134,20 @@ Fixpoint denote_B (b : bexp) : BExpDom :=
     exists v1 v2,
     (v1, st) ∈ [[ b1 ]]B /\ (v2, st) ∈ [[ b2 ]]B
     /\ v = (andb v1 v2) }}
+
+  (* Uncomment to account for larger set of boolean expressions in SF. *)
+
+  (* | <{a1 <> a2}> => {{ (v, st) |
+    exists v1 v2,
+    (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
+    /\ (v1 = v2 <-> v = false) }}
+
+  | <{ a1 > a2}> => {{ (v, st) |
+    exists v1 v2,
+    (v1, st) ∈ [[ a1 ]]A /\ (v2, st) ∈ [[ a2 ]]A
+    /\ (v1 > v2 <-> v = true) }} *)
+
+
   end
 where "'[[' b ']]B'" := (denote_B b).
 
@@ -125,6 +178,29 @@ Lemma aexp_eqv_trans : forall (a1 a2 a3 : aexp),
     a1 ==A a2 -> a2 ==A a3 -> a1 ==A a3.
 Proof. intros; eapply Same_set_trans; eassumption. Qed.
 
+(* We can use the following command to register the fact that our
+   notion of equivalence for arithmetic expressions is actually an
+   equivalence relation. This allows us to use the [reflexivity],
+   [symmetry], and [transitivity] tactics with goals and assumptions
+   about arithmetic equivalence, just as we can with regular
+   equality. *)
+Add Parametric Relation : aexp aexp_eqv
+    reflexivity  proved by aexp_eqv_refl
+    symmetry proved by aexp_eqv_sym
+    transitivity proved by aexp_eqv_trans
+    as eqv_aexp_eqv.
+
+Example aexp_tactic_ex : forall (a1 a2 a3 : aexp),
+    a1 ==A a2 -> a3 ==A a2 -> a1 ==A a3.
+Proof.
+  intros.
+  symmetry in H.
+  symmetry.
+  transitivity a2.
+  assumption.
+  assumption.
+Qed.
+
 Lemma bexp_eqv_refl : forall (b : bexp),
     b ==B b.
 Proof. intro; apply Same_set_refl. Qed.
@@ -137,11 +213,17 @@ Lemma bexp_eqv_trans : forall (b1 b2 b3 : bexp),
     b1 ==B b2 -> b2 ==B b3 -> b1 ==B b3.
 Proof. intros; eapply Same_set_trans; eassumption. Qed.
 
+Add Parametric Relation : bexp bexp_eqv
+    reflexivity proved by bexp_eqv_refl
+    symmetry proved by bexp_eqv_sym
+    transitivity proved by bexp_eqv_trans
+    as eqv_bexp_eqv.
+
 (* We can reason about equivalence of two expressions by reasoning
    about their denotations, allowing us to use any lemmas or theorems
    about sets. *)
 
-Theorem axp_eqv_example: <{ X + Y }> ==A <{ Y + X }>.
+Theorem aexp_eqv_example: <{ X + Y }> ==A <{ Y + X }>.
 Proof.
   (* To show two expressions are equivalent, we need to prove their
   denotations are the same. That is, we need to show that every
@@ -165,15 +247,32 @@ Proof.
     lia.
 Qed.
 
-Theorem axp_eqv_example_2: <{ X - X }> ==A <{ 0 }>.
+Theorem aexp_eqv_example_2 :
+  forall (a : aexp), <{ a - a }> ==A <{ 0 }>.
 Proof.
   split; simpl; intros (n, st) In_st.
   - In_inversion. subst.
+    erewrite aexp_eqv_unique with (m := x) (n := x0) by eassumption.
     In_intro; lia.
   - In_inversion.
     In_intro.
-    eexists (st X), (st X); repeat split.
+    destruct (denote_aexp_defined a st) as [m denote_a].
+    exists m, m; repeat split; try assumption.
     lia.
+Qed.
+
+Theorem beq_eqv_example : forall a, <{ a = a }> ==B <{ true }>.
+Proof.
+  split; simpl; intros (n, st) In_st.
+  - In_inversion.
+    erewrite aexp_eqv_unique with (m := x) (n := x0) in H1 by eassumption.
+    rewrite <- H1.
+    reflexivity.
+  - In_inversion.
+    In_intro.
+    destruct (denote_aexp_defined a st) as [m denote_a].
+    exists m, m; repeat split; try assumption.
+    subst; reflexivity.
 Qed.
 
 (* The semantics of boolean expressions is /compositional/: the
@@ -186,8 +285,8 @@ Lemma beq_eqv_cong : forall a1 a2 a1' a2',
     a2 ==A a2' ->
     <{a1 = a2}> ==B <{a1' = a2'}>.
 Proof.
-  intros a1 a2 a1' a2' a1_eqv a2_eqv; split;
-    intros (b, st) v_In.
+  intros a1 a2 a1' a2' a1_eqv a2_eqv.
+  split; intros (b, st) v_In.
   - (* Since [[a1 = a2]]B and [[a1' = a2']]B are built from the
        results of [[a1]]A, [[a2]]A, [[a1']]A, and [[a2]]A, their
        equivalence follows from the assumptions that [[a1]]A and
@@ -204,12 +303,35 @@ Proof.
     + apply a2_eqv; assumption.
 Qed.
 
-Lemma ble_eqv_cong : forall a1 a2 a1' a2',
+(* It turns out that Coq includes built in support for a generalized
+   form of rewriting using equivalence relations. In order for
+   rewriting to work however, we have to demonstrate which cases they
+   work in. This amounts to proving congruences like the lemma above,
+   but we also have to use a specialized Command to let Coq know that
+   we're extending the behavior of the [rewrite] tactic.
+
+   The 'Generalized Rewriting' chapter of Coq's documentation has the
+   full details on all the bells and whistles of this feature, but
+   we'll just give a taste of how this works here. *)
+
+Add Parametric Morphism : BEq
+    with signature aexp_eqv ==> aexp_eqv ==> bexp_eqv
+      as beq_eqv_cong'.
+Proof.
+  intros; apply beq_eqv_cong; assumption.
+Qed.
+
+(* We can skip the process by proving the desired congruence fact
+   directly: *)
+(* Lemma ble_eqv_cong : forall a1 a2 a1' a2',
     a1 ==A a1' ->
     a2 ==A a2' ->
-    <{a1 <= a2}> ==B <{a1' <= a2'}>.
+    <{a1 <= a2}> ==B <{a1' <= a2'}>. *)
+Add Parametric Morphism : BLe
+    with signature aexp_eqv ==> aexp_eqv ==> bexp_eqv
+      as ble_eqv_cong.
 Proof.
-  intros a1 a2 a1' a2' a1_eqv a2_eqv; split;
+  intros a1 a1' a1_eqv a2 a2' a2_eqv; split;
     simpl; intros (b, st) v_In; In_inversion.
   - In_intro.
     exists x, x0.
@@ -223,9 +345,12 @@ Proof.
     + apply a2_eqv; assumption.
 Qed.
 
-Lemma bnot_eqv_cong : forall b1 b1',
+(* Lemma bnot_eqv_cong : forall b1 b1',
     b1 ==B b1' ->
-    <{~ b1}> ==B <{~ b1'}>.
+    <{~ b1}> ==B <{~ b1'}>. *)
+Add Parametric Morphism : BNot
+    with signature bexp_eqv ==> bexp_eqv
+      as bnot_eqv_cong.
 Proof.
   intros b1 b1' b1_eqv; split;
     simpl; intros (b, st) v_In; In_inversion.
@@ -233,12 +358,16 @@ Proof.
   - In_intro. apply b1_eqv; assumption.
 Qed.
 
-Lemma band_eqv_cong : forall b1 b2 b1' b2',
+(* Lemma band_eqv_cong : forall b1 b2 b1' b2',
     b1 ==B b1' ->
     b2 ==B b2' ->
-    <{b1 && b2}> ==B <{b1' && b2'}>.
+    <{b1 && b2}> ==B <{b1' && b2'}>. *)
+
+Add Parametric Morphism : BAnd
+    with signature bexp_eqv ==> bexp_eqv ==> bexp_eqv
+      as band_eqv_cong.
 Proof.
-  intros b1 b2 b1' b2' b1_eqv b2_eqv; split;
+  intros b1 b1' b1_eqv b2 b2' b2_eqv; split;
     simpl; intros (b, st) v_In; In_inversion.
   - In_intro.
     exists x, x0; repeat split; try assumption.
@@ -250,19 +379,30 @@ Proof.
     apply b2_eqv; assumption.
 Qed.
 
-(* These congruence facts are quite useful for reasonin about
-   particular expressions. *)
+(* These congruence facts are quite useful for reasoning about
+   particular expressions. We could apply these lemmas directly, as in
+   this proof: *)
 Theorem bexp_eqv_example: <{ X - X = 0 }> ==B <{ true }>.
 Proof.
   (* We first use the fact that equivalence (i.e. set equality) is
   transitive to simplify the left-hand side of the equality. *)
   eapply bexp_eqv_trans with (b2 := <{0 = 0}>).
   - apply beq_eqv_cong.
-    + apply axp_eqv_example_2.
-    + eapply aexp_eqv_refl.
+    + apply aexp_eqv_example_2.
+    + reflexivity.
   - split; simpl; intros (b, st) v_In; In_inversion; In_intro; subst.
     + apply H1; reflexivity.
     + exists 0, 0; repeat split.
+Qed.
+
+(* Thanks to the special commands we used above, though, we can also
+   use the rewrite tactic to prove such examples directly: *)
+Theorem bexp_eqv_example': <{ X - X = 0 }> ==B <{ true }>.
+Proof.
+  intros.
+  rewrite aexp_eqv_example_2.
+  rewrite beq_eqv_example.
+  reflexivity.
 Qed.
 
 (* The semantic domain for commands is pairs of initial and final
@@ -326,6 +466,24 @@ Definition com_eqv (c c' : com) : Prop :=
 
 Notation "c1 '==C' c2 " := (com_eqv c1 c2) (at level 40).
 
+Lemma com_eqv_refl : forall (c : com),
+    c ==C c.
+Proof. intro; apply Same_set_refl. Qed.
+
+Lemma com_eqv_sym : forall (c1 c2 : com),
+    c1 ==C c2 -> c2 ==C c1.
+Proof. intros; apply Same_set_sym; assumption. Qed.
+
+Lemma com_eqv_trans : forall (c1 c2 c3 : com),
+    c1 ==C c2 -> c2 ==C c3 -> c1 ==C c3.
+Proof. intros; eapply Same_set_trans; eassumption. Qed.
+
+Add Parametric Relation : com com_eqv
+    reflexivity proved by com_eqv_refl
+    symmetry proved by com_eqv_sym
+    transitivity proved by com_eqv_trans
+    as eqv_com_eqv.
+
 (* Using the denotational semantics of commands, we can prove that
    programs have the same meaning: *)
 Lemma seq_skip_opt :
@@ -351,7 +509,6 @@ Qed.
 (* Using the denotational semantics of commands, we can show that if
    the condition of an if expression is equivalent to true, the entire
    expression is semantically equivalent to the then branch: *)
-
 Theorem if_true: forall b c1 c2,
     b ==B <{true}>  ->
     <{ if b then c1 else c2 end }> ==C  c1.
@@ -427,41 +584,59 @@ Proof.
     + left. intuition.
 Qed.
 
-(* We can show that command equivalence is a /congruence/: that two
+(* We can again show that command equivalence is a /congruence/: that two
    programs are equivalent if their subterms are equivalent.
 
-   The first step is to show this holds for individual commands. *)
+   The first step is to show this holds for individual commands.
+
 Lemma seq_eq_cong : forall c1 c2 c1' c2',
     c1 ==C c1' ->
     c2 ==C c2' ->
-    <{c1; c2}> ==C <{c1'; c2'}>.
+    <{c1; c2}> ==C <{c1'; c2'}>. *)
+Add Parametric Morphism : CSeq
+    with signature com_eqv ==> com_eqv ==> com_eqv
+      as seq_eq_cong.
 Proof.
   intros; split; simpl; intros (st, st') X_In; In_inversion.
-  - exists x; split.
+  - exists x1; split.
     + apply H; assumption.
     + apply H0; assumption.
-  - exists x; split.
+  - exists x1; split.
     + apply H; assumption.
     + apply H0; assumption.
 Qed.
 
-Lemma if_eq_cong : forall b c1 c2 c1' c2',
+(* Lemma if_eq_cong : forall b c1 c2 c1' c2',
     c1 ==C c1' ->
     c2 ==C c2' ->
-    <{if b then c1 else c2 end}> ==C <{if b then c1' else c2' end}>.
+    <{if b then c1 else c2 end}> ==C <{if b then c1' else c2' end}>. *)
+Add Parametric Morphism : CIf
+    with signature bexp_eqv ==> com_eqv ==> com_eqv ==> com_eqv
+      as if_eq_cong.
 Proof.
-  intros; split; simpl; intros x X_In; In_inversion.
-  - left; intuition. apply H. assumption.
-  - right; intuition. apply H0. assumption.
-  - left; intuition. apply H. assumption.
-  - right; intuition. apply H0. assumption.
+  intros; split; simpl; intros ? X_In; In_inversion.
+  - left; intuition.
+    + apply H. assumption.
+    + apply H0. assumption.
+  - right; intuition.
+    + apply H. assumption.
+    + apply H1. assumption.
+  - left; intuition.
+    + apply H. assumption.
+    + apply H0. assumption.
+  - right; intuition.
+    + apply H. assumption.
+    + apply H1. assumption.
 Qed.
 
-Lemma while_eq_cong : forall b c1 c1',
+(* Lemma while_eq_cong : forall b c1 c1',
     c1 ==C c1' ->
-    <{while b do c1 end}> ==C <{while b do c1' end}>.
+    <{while b do c1 end}> ==C <{while b do c1' end}>. *)
+Add Parametric Morphism : CWhile
+    with signature bexp_eqv ==> com_eqv ==> com_eqv
+      as while_eq_cong.
 Proof.
-  intros; split; simpl; intros x X_In; In_inversion.
+  intros; split; simpl; intros ? X_In; In_inversion.
   - intuition.
     + eapply Ind in X_In.
       apply X_In.
@@ -472,10 +647,12 @@ Proof.
       * apply LFP_fold.
         apply while_body_monotone.
         left; intuition.
-      * apply LFP_fold.
-        apply while_body_monotone.
-        right. exists x; intuition.
         apply H; assumption.
+      * apply LFP_fold.
+        apply while_body_monotone.
+        right. exists x1; intuition.
+        -- apply H; assumption.
+        -- apply H0; assumption.
   - intuition.
     + eapply Ind in X_In.
       apply X_In.
@@ -486,11 +663,13 @@ Proof.
       * apply LFP_fold.
         apply while_body_monotone.
         left; intuition.
+        apply H; assumption.
       * apply LFP_fold.
         apply while_body_monotone.
         right.
-        exists x; intuition.
-        apply H; assumption.
+        exists x1; intuition.
+        -- apply H; assumption.
+        -- apply H0; assumption.
 Qed.
 
 (* We can encode the idea of 'is a subterm' using contexts-- these are
@@ -536,20 +715,16 @@ Lemma contextual_equivalence :
 Proof.
   induction ctx; intros; inversion H; inversion H0; subst.
   - intuition.
-  - eapply seq_eq_cong.
-    apply IHctx; assumption.
-    apply Same_set_refl.
-  - eapply seq_eq_cong.
-    apply Same_set_refl.
-    apply IHctx; assumption.
-  - apply if_eq_cong.
-    apply IHctx; assumption.
-    apply Same_set_refl.
-  - apply if_eq_cong.
-    apply Same_set_refl.
-    apply IHctx; assumption.
-  - apply while_eq_cong.
-    apply IHctx; assumption.
+  - rewrite IHctx with (c1' := c3) (c2' := c6) by assumption.
+    reflexivity.
+  - rewrite IHctx with (c1' := c4) (c2' := c7) by assumption.
+    reflexivity.
+  - rewrite IHctx with (c1' := c3) (c2' := c6) by assumption.
+    reflexivity.
+  - rewrite IHctx with (c1' := c4) (c2' := c7) by assumption.
+    reflexivity.
+  - rewrite IHctx with (c1' := cb) (c2' := cb0) by assumption.
+    reflexivity.
 Qed.
 
 (* Finally, we can show that the denotational and big-step operational
