@@ -64,15 +64,14 @@ Notation "'false'"  := false (at level 1).
 Notation "'false'"  := tm_false (in custom stlc_tm at level 0).
 
 (* Notations for modal operators + types *)
-Notation "'□' T" := (Ty_Box T) (in custom stlc_ty at level 50,
-                                   T custom stlc_ty at level 51).
-Notation "'box' t" := (tm_box t) (in custom stlc_tm at level 0).
+Notation "'□' T" := (Ty_Box T) (in custom stlc_ty at level 51).
+Notation "'box' t" := (tm_box t) (in custom stlc_tm at level 51).
 Notation "'unbox' x ':=' t1 'in' t2" :=
   (tm_unbox x t1 t2) (in custom stlc_tm at level 90, x at level 99,
                          t1 custom stlc_tm at level 99,
                          t2 custom stlc_tm at level 99,
                          left associativity).
-Notation "'♢' T" := (Ty_Diamond T) (in custom stlc_ty at level 50).
+Notation "'♢' T" := (Ty_Diamond T) (in custom stlc_ty at level 51).
 Notation "'dia' t" := (tm_dia t) (in custom stlc_tm at level 0).
 Notation "'undia' x ':=' t1 'in' t2" :=
   (tm_undia x t1 t2) (in custom stlc_tm at level 90, x at level 99,
@@ -104,16 +103,16 @@ Hint Unfold s : core.
 
 (** Some examples proof terms from Chapter 4: *)
 
-(* quote = λx: □□A. let box u = x in box box u : □□A ⊃ □A *)
-Definition quote : tm := <{\x : □□ Bool, unbox u := x in box (box u) }>.
+(* quote = λx: □□A. let box u = x in box box u : □A ⊃ □□A *)
+Definition quote A : tm := <{\x : □ A, unbox u := x in box (box u) }>.
 
 (* apply = λx:□(A ⊃ B). λy:□A. let box u = x in let box w = y in box u w
    : □(Bool ⊃ Bool) ⊃ □Bool ⊃ □A *)
-Definition apply : tm := <{\x : □ (Bool -> Bool), \y : □ Bool,
+Definition apply A B : tm := <{\x : □ (A -> B), \y : □ A,
           unbox u := x in
         unbox w := y in box (u w) }>.
 
-(* A proof of □(Bool -> Bool) ⊃ ♢Bool -> ♢Bool *)
+(* A proof of ♢♢Bool -> ♢Bool *)
 (* λx: ♢♢ Bool. dia (let dia y = x in let dia z = y in z)*)
 Definition ex_1 : tm := <{\x : ♢♢ Bool, dia (undia y := x in undia z := y in z)}>.
 
@@ -294,3 +293,181 @@ Ltac next_step :=
 Ltac normalize_lambda :=
   repeat (eapply multi_step;
           [ simpl; next_step | simpl ]).
+
+Reserved Notation "Gamma '|-' t '\in' T"
+            (at level 101,
+             t custom stlc_tm, T custom stlc_ty at level 0).
+
+Definition context := (partial_map ty * partial_map ty)%type.
+
+Inductive has_type : context -> tm -> ty -> Prop :=
+(* Lambda Terms *)
+| T_Var1 : forall Delta Gamma x T1,
+    Gamma x = Some T1 ->
+    (Delta, Gamma) |- x \in T1
+
+| T_Var2 : forall Delta Gamma x T1,
+    Delta x = Some T1 ->
+    (Delta, Gamma) |- x \in T1
+| T_Abs : forall Delta Gamma x T1 T2 t1,
+    (Delta, x |-> T2 ; Gamma) |- t1 \in T1 ->
+      (Delta, Gamma) |- \x:T2, t1 \in (T2 -> T1)
+| T_App : forall T1 T2 Gamma t1 t2,
+      Gamma |- t1 \in (T2 -> T1) ->
+      Gamma |- t2 \in T2 ->
+      Gamma |- t1 t2 \in T1
+
+(* Booleans *)
+| T_True : forall Gamma,
+      Gamma |- true \in Bool
+| T_False : forall Gamma,
+       Gamma |- false \in Bool
+| T_If : forall t1 t2 t3 T1 Gamma,
+    Gamma |- t1 \in Bool ->
+    Gamma |- t2 \in T1 ->
+       Gamma |- t3 \in T1 ->
+       Gamma |- if t1 then t2 else t3 \in T1
+
+(* Box Operators *)
+| T_Box : forall Delta Gamma t T,
+    (Delta, empty) |- t \in T ->
+    (Delta, Gamma) |- box t \in □T
+| T_Unbox : forall Delta Gamma x t1 t2 T1 T2 ,
+    (Delta, Gamma) |- t1 \in ( □T1 ) ->
+    (x |-> T1; Delta, Gamma) |- t2 \in T2  ->
+    (Delta, Gamma) |- unbox x := t1 in t2 \in T2
+
+(* Dia Operators *)
+| T_Dia : forall Delta Gamma t T,
+    (Delta, Gamma) |- t \in T ->
+    (Delta, Gamma) |- dia t \in ♢T
+| T_Undia : forall Delta Gamma x t1 t2 T1 T2 ,
+    (Delta, Gamma) |- t1 \in ( ♢T1 ) ->
+    (Delta, x |-> T1; Gamma) |- t2 \in T2  ->
+    (Delta, Gamma) |- undia x := t1 in t2 \in T2
+
+where "Gamma '|-' t '\in' T" := (has_type Gamma t T).
+
+(* All our favorite Modal Axioms: *)
+
+(* λx:A ⊃ B ⊃ C. λy:A ⊃ B. λz:A. (x z) (y z)
+   : (A ⊃ B ⊃ C) ⊃(A ⊃ B) ⊃ A ⊃ C *)
+Example Modal_Axiom_1 : forall A B C,
+   (empty, empty) |- \x:A -> B -> C, \y:A -> B, \z:A, (x z) (y z)
+   \in ((A -> B -> C) -> (A -> B) -> A -> C).
+Proof.
+  repeat econstructor.
+Qed.
+
+(* λx:A. λy:B. x
+   : A ⊃ B ⊃ A *)
+Example Modal_Axiom_2 : forall A B,
+    (empty, empty) |- \x : A, \y : B, x \in (A -> B -> A).
+Proof.
+  repeat econstructor.
+Qed.
+
+(* λx:□(A ⊃ B). λy:□A. let box u = x in let box w = y in box (u w)
+   : □(A ⊃ B) ⊃(□A ⊃ □B) *)
+Example Modal_Axiom_3 : forall A B,
+    (empty, empty) |-
+      \x:□(A -> B), \y:□A, (unbox u := x in unbox w := y in box (u w))
+        \in ((□(A -> B)) -> (□A) -> (□B)).
+Proof.
+  intros; econstructor.
+  econstructor.
+  econstructor.
+  - repeat econstructor.
+  - econstructor.
+    + repeat econstructor.
+    + econstructor.
+      econstructor.
+      constructor 2; reflexivity.
+      constructor 2; reflexivity.
+Qed.
+
+(* λx:□A. let box u = x in u
+: □A ⊃ A *)
+Example Modal_Axiom_4 : forall A,
+    (empty, empty) |- \y : □A, unbox u := y in u \in ((□A) -> A).
+Proof.
+  econstructor.
+  econstructor.
+  repeat econstructor.
+  econstructor 2; reflexivity.
+Qed.
+
+(* λx:□A. let box u = x in box box u
+   : □A ⊃ □□A *)
+Example Modal_Axiom_5 : forall A,
+    (empty, empty) |- \x : □A, unbox u := x in box (box u) \in ((□A) -> (□ (□ A))).
+Proof.
+  econstructor.
+  econstructor.
+  repeat econstructor.
+  econstructor.
+  econstructor.
+  econstructor 2; reflexivity.
+Qed.
+
+(* λx:A. dia x
+   : A ⊃ ♢A *)
+Example Modal_Axiom_6 : forall A,
+    (empty, empty) |- \x : A, dia x \in (A -> ♢A).
+Proof.
+  repeat econstructor.
+Qed.
+
+(* λx:♢♢A. dia (let dia y = x in let dia z = y in z)
+   : ♢♢A ⊃ ♢A *)
+Example Modal_Axiom_7 : forall A,
+    (empty, empty) |- \x : ♢♢A, dia (undia y := x in undia z := y in z) \in ((♢♢A) -> ♢A).
+Proof.
+  repeat econstructor.
+Qed.
+
+(* λx:□(A ⊃ B). λy:♢A. let box u = x in dia (let dia z = y in u z)
+   : □(A ⊃ B) ⊃(♢A ⊃ ♢B) *)
+Example Modal_Axiom_8 : forall A B,
+    (empty, empty) |- \x : □(A -> B), \y : ♢A, unbox u := x in dia (undia z := y in u z)
+                                                                   \in ((□(A -> B)) -> (♢A) -> ♢B).
+Proof.
+  econstructor.
+  econstructor.
+  econstructor.
+  - repeat econstructor.
+  - econstructor.
+    econstructor.
+    + repeat econstructor.
+    + econstructor.
+      * econstructor 2; reflexivity.
+      * repeat econstructor.
+Qed.
+
+Example quote_is_typed (A : ty) :
+  let t := quote A in
+  (empty, empty) |- t \in ((□A) -> (□□A)).
+Proof.
+  econstructor.
+  econstructor.
+  - repeat econstructor.
+  - econstructor.
+    econstructor.
+    econstructor 2; reflexivity.
+Qed.
+
+Example apply_is_typed (A B : ty) :
+  let t := apply A B in
+  (empty, empty) |- t \in ((□A -> B) -> (□A) -> □B).
+Proof.
+  econstructor.
+  econstructor.
+  econstructor.
+  - repeat econstructor.
+  - econstructor.
+    + repeat econstructor.
+    + econstructor.
+      econstructor.
+      econstructor 2; reflexivity.
+      econstructor 2; reflexivity.
+Qed.
