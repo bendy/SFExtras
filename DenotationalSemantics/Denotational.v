@@ -31,6 +31,7 @@ Open Scope denote_scope.
 Fixpoint denote_A (a : aexp) : AExpDom :=
   match a with
   | ANum n => {{ ( m, st ) | m = n }}
+
   (* ⟦x⟧A ≡ {(σ, σ(x))} *)
   | AId x  => {{ ( m, st ) |  m = st x }}
 
@@ -220,9 +221,9 @@ Theorem aexp_opt_zero_sound
   : forall a, aexp_opt_zero a ==A a.
 Proof.
   (* New *tactical* alert: *)
-  induction a; simpl.
-  - reflexivity.
-  - reflexivity.
+  induction a; simpl; try reflexivity.
+  (* - reflexivity.
+  - reflexivity. *)
   - (* We could proceed by case analysis on [a1], but this is a golden
     opportunity to explore Coq's support for equational reasoning with
     equivalences like aexp_eqv. *)
@@ -271,7 +272,7 @@ Add Parametric Morphism : APlus
     with signature aexp_eqv ==> aexp_eqv ==> aexp_eqv
       as plus_eqv_cong'.
 Proof.
-  intros; apply plus_eqv_cong; assumption.
+  intros. apply plus_eqv_cong; assumption.
 Qed.
 
 (* We can skip the process by proving the desired congruence fact
@@ -325,9 +326,7 @@ Qed.
 Theorem aexp_opt_zero_sound
   : forall a, aexp_opt_zero a ==A a.
 Proof.
-  induction a; simpl.
-  - reflexivity.
-  - reflexivity.
+  induction a; simpl; try reflexivity.
   - (* Having done all this work, our standard rewrite tactics now
     work with assumptions and goals involving ==A! *)
     rewrite <- IHa1 at 2.
