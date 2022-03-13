@@ -763,6 +763,273 @@ Proof.
   - econstructor; eauto.
 Qed.
 
+Inductive bound_in : string -> tm -> Prop :=
+  | bi_app1 : forall x t1 t2,
+      bound_in x t1 -> bound_in x <{ t1 t2 }>
+  | bi_app2 : forall x t1 t2,
+      bound_in x t2 -> bound_in x <{ t1 t2 }>
+| bi_abs : forall x T11 t12,
+    bound_in x <{ \x : T11, t12 }>
+| bi_abs2 : forall x y T11 t12,
+    bound_in x <{ t12 }> ->
+    bound_in x <{ \y : T11, t12 }>
+
+  (* booleans *)
+  | bi_test0 : forall x t0 t1 t2,
+      bound_in x t0 ->
+      bound_in x <{ if t0 then t1 else t2 }>
+  | bi_test1 : forall x t0 t1 t2,
+      bound_in x t1 ->
+      bound_in x <{ if t0 then t1 else t2 }>
+  | bi_test2 : forall x t0 t1 t2,
+      bound_in x t2 ->
+      bound_in x <{ if t0 then t1 else t2 }>
+  (* Modal Operators  *)
+  | bi_box : forall x t1,
+      bound_in x t1 ->
+      bound_in x <{ box t1 }>
+| bi_unbox1 : forall x t1 t2,
+    bound_in x <{ unbox x := t1 in t2 }>
+| bi_unbox2 : forall x y t1 t2,
+      bound_in x t1 ->
+      bound_in x <{ unbox y := t1 in t2 }>
+| bi_unbox3 : forall x y t1 t2,
+    bound_in x t2 ->
+    bound_in x <{ unbox y := t1 in t2 }>
+
+| bi_dia : forall x t1,
+      bound_in x t1 ->
+      bound_in x <{ dia t1 }>
+| bi_undia1 : forall x t1 t2,
+      bound_in x <{ undia x := t1 in t2 }>
+| bi_undia2 : forall x y t1 t2,
+      bound_in x t1 ->
+      bound_in x <{ undia y := t1 in t2 }>
+| bi_undia3 : forall x y t1 t2,
+    bound_in x t2 ->
+    bound_in x <{ undia y := t1 in t2 }>.
+
+Hint Constructors bound_in : core.
+
+Inductive appears_free_in : string -> tm -> Prop :=
+  | afi_var : forall (x : string),
+      appears_free_in x <{ x }>
+  | afi_app1 : forall x t1 t2,
+      appears_free_in x t1 -> appears_free_in x <{ t1 t2 }>
+  | afi_app2 : forall x t1 t2,
+      appears_free_in x t2 -> appears_free_in x <{ t1 t2 }>
+  | afi_abs : forall x y T11 t12,
+        y <> x  ->
+        appears_free_in x t12 ->
+        appears_free_in x <{ \y : T11, t12 }>
+
+  (* booleans *)
+  | afi_test0 : forall x t0 t1 t2,
+      appears_free_in x t0 ->
+      appears_free_in x <{ if t0 then t1 else t2 }>
+  | afi_test1 : forall x t0 t1 t2,
+      appears_free_in x t1 ->
+      appears_free_in x <{ if t0 then t1 else t2 }>
+  | afi_test2 : forall x t0 t1 t2,
+      appears_free_in x t2 ->
+      appears_free_in x <{ if t0 then t1 else t2 }>
+  (* Modal Operators  *)
+  | afi_box : forall x t1,
+      appears_free_in x t1 ->
+      appears_free_in x <{ box t1 }>
+| afi_unbox1 : forall x y t1 t2,
+    appears_free_in x t2 ->
+    appears_free_in x <{ unbox y := t1 in t2 }>
+| afi_unbox2 : forall x y t1 t2,
+    x <> y ->
+    appears_free_in x t2 ->
+    appears_free_in x <{ unbox y := t1 in t2 }>
+| afi_dia : forall x t1,
+      appears_free_in x t1 ->
+      appears_free_in x <{ dia t1 }>
+  | afi_undia1 : forall x y t1 t2,
+      appears_free_in x t2 ->
+      appears_free_in x <{ undia y := t1 in t2 }>
+| afi_undia2 : forall x y t1 t2,
+    x <> y ->
+    appears_free_in x t2 ->
+    appears_free_in x <{ undia y := t1 in t2 }>.
+
+Hint Constructors appears_free_in : core.
+
+Lemma inclusion_update_empty
+  : forall x T (Gamma : context),
+    inclusion (x |-> T) (x |-> T; Gamma).
+Proof.
+  unfold inclusion, update, t_update;
+    intros; destruct (eqb_stringP x0 x1); subst; eauto.
+  discriminate.
+Qed.
+
+Lemma local_substitution_preserves_typing'
+  : forall Gamma Gamma'' x U t v T
+           (Hx : forall x, bound_in x t -> Gamma'' x = None)
+           (HInc : inclusion Gamma'' Gamma),
+  (x |-> local U; Gamma) |- t \in T ->
+  Gamma'' |- v \in U   ->
+  Gamma |- [x:=v]t \in T.
+Proof.
+  intros Gamma Gamma'' x U t v T Hx HInc Ht.
+  remember (x |-> local U; Gamma) as Gamma'.
+  revert Hx HInc.
+  generalize dependent Gamma.
+  revert Gamma''.
+  pattern Gamma', t, T, Ht;
+    eapply has_type_ind' with
+    (P := fun Gamma' t T _ =>
+            forall
+              (Gamma'' Gamma : partial_map var_scope)
+              (Heq : Gamma' = (x |-> local U; Gamma))
+              (Hx : forall x, bound_in x t -> Gamma'' x = None)
+              (HInc : inclusion Gamma'' Gamma)
+              (Hv : Gamma'' |- v \in U),
+              Gamma |- [x := v] t \in T)
+    (P0 := fun Gamma' t T _ =>
+             forall
+               (Gamma'' Gamma : partial_map var_scope)
+               (Heq : Gamma' = (x |-> local U; Gamma))
+               (Hx : forall x, bound_in x t -> Gamma'' x = None)
+               (HInc : inclusion Gamma'' Gamma)
+               (Hv : Gamma'' |- v \in U),
+               has_local_type Gamma (<{[x := v] t}>) T);
+    eauto using inclusion_update; clear; intros; subst; simpl; eauto.
+  - (* var1 *)
+    rename x0 into y. destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite update_eq in e.
+      injection e as H2; subst.
+      rewrite eqb_refl; intros; eapply weakening; try eassumption;
+        unfold inclusion; eauto.
+    + (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      intros; apply T_Var1. rewrite update_neq in e; auto.
+  - rename x0 into y. destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite update_eq in e; congruence.
+    + (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      intros; apply T_Var2. rewrite update_neq in e; auto.
+  - (* abs *)
+    rename x0 into y.
+    destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite eqb_refl.
+      apply T_Abs.
+      rewrite update_shadow in h. assumption.
+    +  (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      apply T_Abs.
+      eapply H with (Gamma'' := Gamma''); eauto.
+      rewrite update_permute; auto.
+      * unfold inclusion, update, t_update.
+        intros; destruct (eqb_stringP y x0); subst; eauto.
+        rewrite Hx in H0; try discriminate; eauto.
+  - econstructor; eauto.
+  - econstructor; eauto.
+  - (* box *)
+    econstructor.
+    eapply weakening; try eassumption.
+    unfold inclusion; simpl; intros.
+    unfold update, t_update, global_context in *|-*.
+    destruct (eqb_stringP x x0); subst; eauto.
+    congruence.
+  - rename x0 into y.
+    destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite eqb_refl.
+      rewrite update_shadow in h0.
+      econstructor; eauto.
+    +  (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      eapply T_Unbox.
+      * eapply H; eauto.
+      * eapply H0; eauto.
+        rewrite update_permute; auto.
+        unfold inclusion; simpl; intros.
+        unfold update, t_update, global_context.
+        destruct (eqb_stringP y x0); subst; eauto.
+        rewrite Hx in H1; eauto; try discriminate.
+  - rename x0 into y.
+    destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite eqb_refl.
+      rewrite update_shadow in h0.
+      econstructor; eauto.
+    +  (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      eapply LT_Undia.
+      * eapply H; eauto.
+      * eapply H0; eauto.
+        rewrite update_permute; auto.
+        unfold inclusion, update, t_update, global_context; intros.
+        destruct (eqb_stringP y x0); subst; eauto.
+        rewrite Hx in H1; eauto; try discriminate.
+  - rename x0 into y.
+    destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite eqb_refl.
+      rewrite update_shadow in h0.
+      econstructor; eauto.
+    +  (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      eapply LT_Unbox.
+      * eapply H; eauto.
+      * eapply H0; eauto.
+        rewrite update_permute; auto.
+        unfold inclusion, update, t_update, global_context; intros.
+        destruct (eqb_stringP y x0); subst; eauto.
+        rewrite Hx in H1; eauto; try discriminate.
+  - econstructor; eauto.
+Qed.
+
+Lemma local_substitution_preserves_local_typing'
+  : forall Gamma Gamma'' x U t v T
+           (Hx : forall x, bound_in x t -> Gamma'' x = None)
+           (HInc : inclusion Gamma'' Gamma),
+    has_local_type (x |-> local U; Gamma) t  T ->
+    Gamma'' |- v \in U ->
+    has_local_type Gamma <{[x:=v]t}> T.
+Proof.
+  intros Gamma Gamma'' x U t v T Hx HInc Ht.
+  remember (x |-> local U; Gamma) as Gamma'.
+  generalize dependent Gamma.
+  induction Ht; intros; simpl.
+  - rename x0 into y.
+    destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite eqb_refl.
+      rewrite update_shadow in Ht.
+      econstructor; eauto using local_substitution_preserves_typing'.
+    +  (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      eapply LT_Undia; eauto using local_substitution_preserves_typing'.
+      eapply IHHt; eauto using local_substitution_preserves_typing'.
+      * unfold inclusion, update, t_update, global_context; intros.
+        destruct (eqb_stringP y x0); subst; eauto.
+        rewrite Hx in H1; eauto; try discriminate.
+      * rewrite update_permute; auto.
+  - rename x0 into y.
+    destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite eqb_refl.
+      rewrite update_shadow in Ht.
+      econstructor; eauto using local_substitution_preserves_typing'.
+    +  (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      eapply LT_Unbox; eauto using local_substitution_preserves_typing'.
+      eapply IHHt; eauto using local_substitution_preserves_typing'.
+      * unfold inclusion, update, t_update, global_context; intros.
+        destruct (eqb_stringP y x0); subst; eauto.
+        rewrite Hx in H1; eauto; try discriminate.
+      * rewrite update_permute; auto.
+  - subst; econstructor; eauto using local_substitution_preserves_typing'.
+Qed.
+
 Theorem local_substitution_preserves_local_typing : forall Gamma x U t v T,
     has_local_type (x |-> local U; Gamma) t T ->
     empty |- v \in U   ->
@@ -777,20 +1044,26 @@ Proof.
     + (* x=y *)
       rewrite eqb_refl.
       rewrite update_shadow in Ht.
-      econstructor; eauto using local_substitution_preserves_typing.
+      econstructor; eauto.
+      eapply local_substitution_preserves_typing; try eassumption.
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
-      econstructor; eauto using local_substitution_preserves_typing.
-      eapply IHHt; eauto.
-      rewrite update_permute; auto.
+      econstructor.
+      * eapply local_substitution_preserves_typing;
+          try eassumption; try reflexivity; discriminate.
+      * eapply IHHt; eauto.
+        rewrite update_permute; auto.
   - rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl.
       rewrite update_shadow in Ht.
-      econstructor; eauto using local_substitution_preserves_typing.
+      econstructor; eauto.
+      eapply local_substitution_preserves_typing;
+        try eassumption; try reflexivity; discriminate.
     + rewrite (proj2 (eqb_neq x y)); eauto.
-      econstructor; eauto using local_substitution_preserves_typing.
+      econstructor; eauto using local_substitution_preserves_typing;
+        try eassumption; try reflexivity; try discriminate.
       eapply IHHt; eauto.
       rewrite update_permute; auto.
   - econstructor; eauto using local_substitution_preserves_typing.
@@ -930,37 +1203,128 @@ Proof.
   - econstructor; eauto using global_substitution_preserves_typing.
 Qed.
 
+Definition disjoint_contexts (Gamma Gamma' : context) : Prop :=
+  (forall x T, Gamma x = Some T -> Gamma' x = None) /\
+    (forall x T, Gamma' x = Some T -> Gamma x = None).
+
+Definition union_contexts (Gamma Gamma' : context) : context :=
+  fun x => match Gamma x with
+           | Some T => Some T
+           | _ => Gamma' x
+           end.
+
+Lemma union_empty : forall (Gamma : context),
+    union_contexts Gamma empty = Gamma.
+Proof.
+  intros; apply functional_extensionality.
+  intros; unfold union_contexts; destruct (Gamma x0); eauto.
+Qed.
+
+Lemma disjoint_empty : forall (Gamma : context),
+    disjoint_contexts Gamma empty.
+Proof.
+  unfold disjoint_contexts; split; simpl; intros.
+  reflexivity.
+  discriminate.
+Qed.
+
+Lemma inclusion_union : forall (Gamma Gamma' : context),
+    inclusion Gamma (union_contexts Gamma Gamma').
+Proof.
+  unfold inclusion, union_contexts; intros.
+  destruct (Gamma x0); congruence.
+Qed.
+
+Lemma lookup_disjoint_contexts
+      : forall (Gamma Gamma' : context),
+      disjoint_contexts Gamma Gamma' ->
+      forall x T, Gamma' x = Some T ->
+                  (union_contexts Gamma Gamma') x = Some T.
+Proof.
+  unfold union_contexts; intros.
+  unfold disjoint_contexts in H; intuition.
+  specialize (H1 x0).
+  destruct (Gamma x0); eauto.
+  erewrite H1 in H0; try discriminate; reflexivity.
+Qed.
+
+Lemma inclusion_union_2 : forall (Gamma Gamma' : context),
+    disjoint_contexts Gamma Gamma' ->
+    inclusion Gamma' (union_contexts Gamma Gamma').
+Proof.
+  unfold inclusion; intros.
+  eauto using lookup_disjoint_contexts.
+Qed.
+
+
+
+Lemma local_substitution_preserves_local_typing''
+  : forall Gamma Gamma'' x U t v T
+           (Hx : forall x, bound_in x t -> ~ bound_in x v)
+           (HInc : disjoint_contexts Gamma'' Gamma),
+    has_local_type (x |-> local U; Gamma) t  T ->
+    Gamma'' |- v \in U ->
+    has_local_type (union_contexts Gamma'' Gamma) <{[x:=v]t}> T.
+Proof.
+Admitted.
+
 Lemma delaying_preserves_local_typing
-  : forall Gamma x U t v T,
-    has_local_type (x |-> local U; Gamma) t T ->
-    has_local_type empty v U   ->
+  : forall Gamma x U t v T
+           (NIn_x : Gamma x = None)
+           (NIn_x_2 : ~ bound_in x v)
+           (Hx : forall x, bound_in x t -> ~ bound_in x v),
+    has_local_type (x |-> local U) t T ->
+    has_local_type Gamma v U   ->
     has_local_type Gamma <{〈 x := v〉t}> T.
 Proof.
-  intros Gamma x U t v T Ht He.
+  intros Gamma x U t v T NIn_x NIn_x2 Hx Ht He.
+  revert NIn_x2 NIn_x Hx.
   generalize dependent T.
-  generalize dependent U.
-  revert Gamma.
-  induction v; simpl;
-    try solve [intros; inversion He; subst;
-               eapply local_substitution_preserves_local_typing; eauto];
-    intros.
-  - intros; inversion He; subst.
-    + econstructor.
-      * eapply weakening; eauto.
-        compute; congruence.
-      * admit.
-    + inversion H; subst.
-      econstructor; eauto.
-      * eapply weakening; eauto.
-        compute; congruence.
-      * admit.
-  - intros; inversion He; subst.
-    + econstructor.
-      * eapply weakening; eauto.
-        compute; congruence.
-      * admit.
-    + inversion H; subst.
-Admitted.
+  pattern Gamma, v, U, He.
+    eapply has_local_type_ind' with
+      (P := (fun (o : context) (t0 : tm) (t1 : ty) (_ : has_type o t0 t1) =>
+               forall (T : ty),
+                 has_local_type (x |-> local t1) t T ->
+                 (~ bound_in x t0) ->
+                 (o x = None ) ->
+                 (forall x, bound_in x t -> ~ bound_in x t0) ->
+                 has_local_type o <{ 〈 x := t0〉  t }> T))
+      (P0 := (fun (o : context) (t0 : tm) (t1 : ty) (_ : has_local_type o t0 t1) =>
+               forall (T : ty),
+                 has_local_type (x |-> local t1) t T ->
+                 (~ bound_in x t0) ->
+                 (o x = None) ->
+                 (forall x, bound_in x t -> ~ bound_in x t0) ->
+                   has_local_type o <{ 〈 x := t0 〉 t }> T));
+      try solve [simpl; intros;
+                 rewrite <- (union_empty Gamma0);
+                 eapply local_substitution_preserves_local_typing'';
+                 unfold inclusion; eauto using local_weakening, inclusion_update_empty, disjoint_empty];
+      eauto.
+  - simpl; econstructor; eauto.
+    eapply H0; eauto using inclusion_update.
+    + unfold update, t_update; simpl.
+      destruct (eqb_stringP x0 x); subst; eauto.
+      destruct H2; eauto.
+    + unfold not; intros.
+      eapply H4; eauto.
+  - simpl; econstructor; eauto.
+    eapply H0; eauto using inclusion_update.
+    + unfold update, t_update; simpl.
+      destruct (eqb_stringP x0 x); subst; eauto.
+      destruct H2; eauto.
+    + unfold not; intros.
+      eapply H4; eauto.
+  - simpl; econstructor; eauto.
+    eapply H0; eauto using inclusion_update.
+    + unfold update, t_update; simpl.
+      destruct (eqb_stringP x0 x); subst; eauto.
+      destruct H2; eauto.
+    + unfold not; intros.
+      eapply H4; eauto.
+Qed.
+
+(* Alas, it appears that we cannot escape variable renaming :p *)
 
 Theorem preservation : forall t t' T,
   empty |- t \in T  ->
@@ -985,9 +1349,12 @@ Proof with eauto.
     + econstructor; eauto.
     + inversion h; subst.
       eapply delaying_preserves_local_typing; try eassumption.
+      reflexivity.
+      admit.
+      admit.
   - inversion HE; subst...
     + econstructor; eauto.
     + eapply global_substitution_preserves_local_typing; eauto.
       inversion h; subst; assumption.
   - econstructor; eauto.
-Qed.
+Admitted.
