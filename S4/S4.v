@@ -724,6 +724,91 @@ Proof.
   - econstructor; eauto using local_substitution_preserves_typing.
 Qed.
 
+Lemma local_substitution_preserves_typing'
+  : forall Delta Gamma x U t v T,
+    Delta;; (x |-> U; Gamma) |- t \in T ->
+  Delta;; empty |- v \in U   ->
+  Delta;; Gamma |- [x:=v]t \in T.
+Proof.
+  intros Delta Gamma x U t v T Ht.
+  remember (x |-> U; Gamma) as Gamma'.
+  generalize dependent Gamma.
+  revert x U.
+  pattern Delta, Gamma', t, T, Ht;
+    eapply has_type_ind' with
+    (P := fun Delta Gamma' t T _ =>
+            forall x U
+              (Gamma : context)
+              (Heq : Gamma' = (x |-> U; Gamma))
+              (Hv : Delta;; empty |- v \in U),
+              Delta;; Gamma |- [x := v] t \in T)
+    (P0 := fun Delta Gamma' t T _ =>
+             forall x U
+               (Gamma : context)
+               (Heq : Gamma' = (x |-> U; Gamma))
+               (Hv : Delta;; empty |- v \in U),
+               has_local_type Delta Gamma (<{[x := v] t}>) T);
+    eauto using inclusion_update; clear; intros; subst; simpl; eauto.
+  - (* var1 *)
+    rename x0 into y.
+    rename x1 into x.
+    destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite update_eq in e.
+      injection e as H2; subst.
+      rewrite eqb_refl; intros; eapply weakening; try eassumption;
+        unfold inclusion; eauto;
+        compute; congruence.
+    + (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      intros; apply T_Local_Var.
+      rewrite update_neq in e; auto.
+  - (* abs *)
+    rename x1 into x.
+    rename x0 into y.
+    destruct (eqb_stringP x y); subst.
+    + (* x=y *)
+      rewrite eqb_refl; rewrite update_shadow in h; eauto.
+    +  (* x<>y *)
+      rewrite (proj2 (eqb_neq x y)); eauto.
+      apply T_Abs.
+      eapply H; eauto.
+      rewrite update_permute; auto.
+  - (* unbox *)
+    econstructor; eauto.
+    eapply H0.
+    eauto.
+    admit.
+  - (* undia *)
+    econstructor; eauto.
+  - (* ubox *)
+    rename x0 into y.
+    eapply LT_Unbox.
+    + eapply H; eauto.
+    + eapply H0; eauto.
+      admit.
+  - econstructor; eauto.
+Admitted.
+
+Theorem local_substitution_preserves_local_typing'
+  : forall Delta Gamma x U t v T,
+    has_local_type Delta (x |-> U; Gamma) t T ->
+    Delta;; empty |- v \in U   ->
+  has_local_type Delta Gamma <{[x:=v]t}> T.
+Proof.
+  intros Delta Gamma x U t v T Ht.
+  remember (x |-> U; Gamma) as Gamma'.
+  generalize dependent Gamma.
+  induction Ht; intros; subst; simpl; eauto.
+  - econstructor; eauto.
+    eapply local_substitution_preserves_typing';
+      try eassumption; try reflexivity.
+  - econstructor; eauto using local_substitution_preserves_typing'.
+    eapply IHHt; eauto.
+    admit.
+  - econstructor; eauto using local_substitution_preserves_typing'.
+Admitted.
+
 Lemma global_substitution_preserves_typing : forall Delta Gamma x U t v T,
   (x |-> U; Delta);; Gamma |- t \in T ->
   empty;; empty |- v \in U   ->
@@ -814,57 +899,39 @@ Proof.
 Qed.
 
 Lemma delaying_preserves_local_typing
-  : forall x U t v T,
-    has_local_type empty (x |-> U) t T ->
-    has_local_type empty empty v U   ->
-    has_local_type empty empty <{〈 x := v〉t}> T.
+  : forall Delta x U t v T,
+    has_local_type Delta (x |-> U) t T ->
+    has_local_type Delta empty v U   ->
+    has_local_type Delta empty <{〈 x := v〉t}> T.
 Proof.
-  intros x U t v T Ht Hv.
+  intros Delta x U t v T Ht Hv.
   remember empty as Gamma.
-  rewrite HeqGamma in Hv at 1, Ht at 1.
-  rewrite HeqGamma at 1.
-  remember empty as Delta.
-  rewrite HeqDelta in HeqGamma.
   generalize dependent T.
-  revert HeqDelta HeqGamma.
+  revert HeqGamma.
   pattern Delta, Gamma, v, U, Hv.
     eapply has_local_type_ind' with
       (P := (fun Delta Gamma v U _ =>
                forall
-                 (HeqDelta : Delta = empty)
                  (HeqGamma : Gamma = empty) (T : ty),
                  has_local_type Delta (x |-> U; Gamma) t T ->
                  has_local_type Delta Gamma <{ 〈 x := v〉  t }> T))
       (P0 := (fun Delta Gamma v U _ =>
                 forall
-                 (HeqDelta : Delta = empty)
                  (HeqGamma : Gamma = empty) (T : ty),
                  has_local_type Delta (x |-> U; Gamma) t T ->
                  has_local_type Delta Gamma <{ 〈 x := v〉  t }> T));
       simpl; intros;
       try solve [subst;
-                 eauto using local_substitution_preserves_local_typing].
-  - admit.
-    (* simpl; econstructor; eauto.
+                 eauto using local_substitution_preserves_local_typing'].
+  - simpl; econstructor; eauto.
     eapply H0; eauto using inclusion_update.
-    + unfold update, t_update; simpl.
-      destruct (eqb_stringP x0 x); subst; eauto.
-      destruct H2; eauto.
-    + unfold not; intros.
-      eapply H4; eauto. *)
-  - admit.
-    (* simpl; econstructor; eauto.
-    eapply H0; eauto using inclusion_update.
-    + unfold update, t_update; simpl.
-      destruct (eqb_stringP x0 x); subst; eauto.
-      destruct H2; eauto.
-      unfold global_context; rewrite H3; reflexivity.
-    + unfold not; intros.
-      eapply H4; eauto. *)
+    admit.
   - simpl; econstructor; eauto.
     admit.
+  - simpl; econstructor; eauto.
+    eapply H0; eauto.
+    admit.
 Admitted.
-
 (* Alas, it appears that we cannot escape variable renaming :p *)
 
 Theorem preservation : forall t t' T,
