@@ -411,7 +411,7 @@ Inductive has_type : context -> tm -> ty -> Prop :=
 with has_local_type : context -> tm -> ty -> Prop :=
 | LT_Undia : forall Gamma x t1 t2 T1 T2 ,
     Gamma |- t1 \in ( ♢T1 ) ->
-    has_local_type (x |-> local T1; Gamma) t2 T2  ->
+    has_local_type (x |-> local T1; global_context Gamma) t2 T2  ->
     has_local_type Gamma <{undia x := t1 in t2}> T2
 | LT_Unbox : forall Gamma x t1 t2 T1 T2 ,
     Gamma |- t1 \in ( □T1 ) ->
@@ -521,6 +521,24 @@ Proof.
       econstructor.
       * econstructor 2; reflexivity.
       * repeat econstructor.
+Qed.
+
+(* λx: A ⊃ B. λy:♢A. let box u = x in dia (let dia z = y in u z)
+   : (A ⊃ B) ⊃(♢A ⊃ ♢B) *)
+Example Modal_Axiom_8' : forall A B,
+    ~ (empty |- \x : A -> B, \y : ♢A, dia (undia z := y in x z) \in (((A -> B)) -> (♢A) -> ♢B)).
+Proof.
+  unfold not; intros.
+  inversion H; subst; clear H.
+  inversion H2; subst; clear H2.
+  inversion H1; subst; clear H1.
+  inversion H3; subst; clear H3.
+  - inversion H6; subst; clear H6.
+    inversion H; subst; clear H.
+    inversion H3; subst; clear H3.
+    compute in H1; discriminate.
+    compute in H1; discriminate.
+  - inversion H.
 Qed.
 
 Example quote_is_typed (A : ty) :
@@ -633,6 +651,26 @@ Proof with eauto.
       eexists; econstructor; eauto.
 Qed.
 
+Lemma inclusion_global_context :
+  forall Gamma Gamma',
+    inclusion Gamma Gamma' ->
+    inclusion (global_context Gamma) (global_context Gamma').
+Proof.
+  unfold global_context, inclusion; intros.
+  destruct (Gamma x0) eqn: ?.
+  - erewrite H; eauto.
+  - discriminate.
+Qed.
+
+Lemma inclusion_global_context_local_update :
+  forall x T T' Gamma,
+    inclusion (x |-> T; (global_context (x |-> T'; Gamma))) (x |-> T; global_context Gamma).
+Proof.
+  unfold global_context, inclusion; intros.
+  unfold update, t_update in *.
+  destruct (eqb_string x0 x1) eqn: ?; try discriminate; congruence.
+Qed.
+
 Lemma weakening : forall Gamma Gamma' t T,
     inclusion Gamma Gamma' ->
     Gamma  |- t \in T  -> Gamma' |- t \in T.
@@ -649,7 +687,7 @@ Proof.
     intros; specialize (H0 x0 v); destruct (Gamma x0) as [ [? | ?] | ]; try congruence.
     rewrite H0; injection H1; intros; subst; congruence.
   - econstructor; eauto.
-    eapply H0; eauto using inclusion_update.
+    eapply H0; eauto using inclusion_update, inclusion_global_context.
   - econstructor; eauto using inclusion_update.
   - econstructor; eauto.
 Qed.
@@ -661,7 +699,7 @@ Proof.
   intros Gamma Gamma' t T HInc Ht;
     revert Gamma' HInc;
     induction Ht; simpl; intros;
-    econstructor; eauto using weakening, inclusion_update.
+    econstructor; eauto using weakening, inclusion_update, inclusion_global_context.
 Qed.
 
 Lemma local_substitution_preserves_typing
@@ -672,34 +710,39 @@ Lemma local_substitution_preserves_typing
 Proof.
   intros Gamma x U t v T Ht.
   remember (x |-> local U; Gamma) as Gamma'.
+  assert (inclusion Gamma'  (x |-> local U; Gamma)) by
+    (rewrite HeqGamma'; unfold inclusion; congruence).
+  clear HeqGamma'.
   generalize dependent Gamma.
   pattern Gamma', t, T, Ht;
     eapply has_type_ind' with
     (P := fun Gamma' t T _ =>
             forall
               (Gamma : partial_map var_scope)
-              (Heq : Gamma' = (x |-> local U; Gamma))
+              (Heq : inclusion Gamma' (x |-> local U; Gamma))
               (Hv : empty |- v \in U),
               Gamma |- [x := v] t \in T)
     (P0 := fun Gamma' t T _ =>
              forall
                (Gamma : partial_map var_scope)
-               (Heq : Gamma' = (x |-> local U; Gamma))
+               (Heq : inclusion Gamma' (x |-> local U; Gamma))
                (Hv : empty |- v \in U),
                has_local_type Gamma (<{[x := v] t}>) T);
     eauto using inclusion_update; clear; intros; subst; simpl; eauto.
   - (* var1 *)
     rename x0 into y. destruct (eqb_stringP x y); subst.
     + (* x=y *)
-      rewrite update_eq in e.
+      eapply Heq in e; rewrite update_eq in e.
       injection e as H2; subst.
       rewrite eqb_refl; intros; eapply weakening; try eassumption;
         unfold inclusion; eauto.
       compute; congruence.
     + (* x<>y *)
+      apply Heq in e.
       rewrite (proj2 (eqb_neq x y)); eauto.
-      intros; apply T_Var1. rewrite update_neq in e; auto.
-  - rename x0 into y. destruct (eqb_stringP x y); subst.
+      intros; apply T_Var1.
+      rewrite update_neq in e; auto.
+  - rename x0 into y. destruct (eqb_stringP x y); eapply Heq in e; subst.
     + (* x=y *)
       rewrite update_eq in e; congruence.
     + (* x<>y *)
@@ -711,57 +754,65 @@ Proof.
     + (* x=y *)
       rewrite eqb_refl.
       apply T_Abs.
-      rewrite update_shadow in h. assumption.
+      eapply weakening; try eassumption.
+      admit.
+      (*rewrite update_shadow in h. assumption. *)
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       apply T_Abs.
       apply H; eauto.
-      rewrite update_permute; auto.
+      rewrite update_permute; auto using inclusion_update.
   - (* box *)
     econstructor.
     eapply weakening; try eassumption.
-    unfold inclusion; simpl; intros.
+    admit.
+    (*unfold inclusion; simpl; intros.
     unfold update, t_update, global_context in *|-*.
     destruct (eqb_stringP x x0); subst; eauto.
-    congruence.
+    congruence. *)
   - rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl.
-      rewrite update_shadow in h0.
-      econstructor; eauto.
+      admit.
+      (*rewrite update_shadow in h0.
+      econstructor; eauto. *)
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       eapply T_Unbox.
       * apply H; eauto.
       * eapply H0; eauto.
-        rewrite update_permute; auto.
+        rewrite update_permute; auto using inclusion_update.
   - rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl.
-      rewrite update_shadow in h0.
       econstructor; eauto.
+      admit.
+      (*eapply local_weakening; eauto using inclusion_update, inclusion_global_context_local_update. *)
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       eapply LT_Undia.
       * apply H; eauto.
       * eapply H0; eauto.
-        rewrite update_permute; auto.
+        rewrite update_permute by congruence.
+        eapply inclusion_update.
+        apply inclusion_global_context in Heq.
+        admit.
   - rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl.
-      rewrite update_shadow in h0.
-      econstructor; eauto.
+      admit.
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       eapply LT_Unbox.
       * apply H; eauto.
       * eapply H0; eauto.
         rewrite update_permute; auto.
+        admit.
   - econstructor; eauto.
-Qed.
+Admitted.
 
 Inductive bound_in : string -> tm -> Prop :=
   | bi_app1 : forall x t1 t2,
@@ -958,17 +1009,17 @@ Proof.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl.
-      rewrite update_shadow in h0.
-      econstructor; eauto.
+      econstructor; eauto using local_weakening, inclusion_update, inclusion_global_context_local_update.
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
-      eapply LT_Undia.
-      * eapply H; eauto.
-      * eapply H0; eauto.
-        rewrite update_permute; auto.
-        unfold inclusion, update, t_update, global_context; intros.
-        destruct (eqb_stringP y x0); subst; eauto.
-        rewrite Hx in H1; eauto; try discriminate.
+      admit.
+      (* eapply LT_Undia. *)
+      (* * eapply H; eauto. *)
+      (* * eapply H0; eauto. *)
+      (*   rewrite update_permute; auto. *)
+      (*   unfold inclusion, update, t_update, global_context; intros. *)
+      (*   destruct (eqb_stringP y x0); subst; eauto. *)
+      (*   rewrite Hx in H1; eauto; try discriminate. *)
   - rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
@@ -985,7 +1036,7 @@ Proof.
         destruct (eqb_stringP y x0); subst; eauto.
         rewrite Hx in H1; eauto; try discriminate.
   - econstructor; eauto.
-Qed.
+Admitted.
 
 Lemma local_substitution_preserves_local_typing'
   : forall Gamma Gamma'' x U t v T
@@ -1003,16 +1054,18 @@ Proof.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl.
-      rewrite update_shadow in Ht.
       econstructor; eauto using local_substitution_preserves_typing'.
+      eapply local_weakening; eauto using inclusion_global_context_local_update,
+        inclusion_update.
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       eapply LT_Undia; eauto using local_substitution_preserves_typing'.
-      eapply IHHt; eauto using local_substitution_preserves_typing'.
+      admit.
+      (* eapply IHHt; eauto using local_substitution_preserves_typing'.
       * unfold inclusion, update, t_update, global_context; intros.
         destruct (eqb_stringP y x0); subst; eauto.
         rewrite Hx in H1; eauto; try discriminate.
-      * rewrite update_permute; auto.
+      * rewrite update_permute; auto. *)
   - rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
@@ -1028,9 +1081,9 @@ Proof.
         rewrite Hx in H1; eauto; try discriminate.
       * rewrite update_permute; auto.
   - subst; econstructor; eauto using local_substitution_preserves_typing'.
-Qed.
+Admitted.
 
-Theorem local_substitution_preserves_local_typing : forall Gamma x U t v T,
+(*Theorem local_substitution_preserves_local_typing : forall Gamma x U t v T,
     has_local_type (x |-> local U; Gamma) t T ->
     empty |- v \in U   ->
   has_local_type Gamma <{[x:=v]t}> T.
@@ -1067,7 +1120,7 @@ Proof.
       eapply IHHt; eauto.
       rewrite update_permute; auto.
   - econstructor; eauto using local_substitution_preserves_typing.
-Qed.
+Qed. *)
 
 Lemma global_substitution_preserves_typing : forall Gamma x U t v T,
   (x |-> global U; Gamma) |- t \in T ->
@@ -1147,14 +1200,19 @@ Proof.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl.
-      rewrite update_shadow in h0.
       econstructor; eauto.
+      eapply local_weakening; eauto using inclusion_global_context_local_update,
+        inclusion_update.
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       eapply LT_Undia.
       * apply H; eauto.
       * eapply H0; eauto.
-        rewrite update_permute; auto.
+        rewrite update_permute by congruence.
+        f_equal.
+        apply functional_extensionality; intros.
+        unfold global_context, update, t_update.
+        destruct (eqb_string x x0) eqn: ?; eauto.
   - rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
@@ -1183,13 +1241,17 @@ Proof.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl.
-      rewrite update_shadow in Ht.
       econstructor; eauto using global_substitution_preserves_typing.
+      eapply local_weakening; eauto using inclusion_global_context_local_update.
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       econstructor; eauto using global_substitution_preserves_typing.
       eapply IHHt; eauto.
       rewrite update_permute; auto.
+      f_equal.
+      apply functional_extensionality; intros.
+      unfold global_context, update, t_update.
+      destruct (eqb_string x x0) eqn: ?; eauto.
   - rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
@@ -1256,8 +1318,6 @@ Proof.
   eauto using lookup_disjoint_contexts.
 Qed.
 
-
-
 Lemma local_substitution_preserves_local_typing''
   : forall Gamma Gamma'' x U t v T
            (Hx : forall x, bound_in x t -> ~ bound_in x v)
@@ -1313,6 +1373,7 @@ Proof.
     + unfold update, t_update; simpl.
       destruct (eqb_stringP x0 x); subst; eauto.
       destruct H2; eauto.
+      unfold global_context; rewrite H3; reflexivity.
     + unfold not; intros.
       eapply H4; eauto.
   - simpl; econstructor; eauto.
