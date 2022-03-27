@@ -603,6 +603,14 @@ Proof.
   unfold inclusion; intros; eauto.
 Qed.
 
+Lemma inclusion_update_empty :
+  forall (Gamma : context) x T ,
+    inclusion (x |-> T) (x |-> T; Gamma).
+Proof.
+  unfold inclusion, update, t_update; intros; eauto.
+  destruct (eqb_string x0 x1); simpl in *; eauto; discriminate.
+Qed.
+
 Lemma inclusion_refl :
   forall Gamma : context,
     inclusion Gamma Gamma.
@@ -796,8 +804,8 @@ Inductive appears_free_inL : string -> tm -> Prop :=
       appears_free_inL x <{ if t0 then t1 else t2 }>
 
 (* Modal Operators  *)
-| afiL_global_var : forall (x : string),
-      appears_free_inL x (global_var x)
+(* | afiL_global_var : forall (x : string),
+      appears_free_inL x (global_var x) *)
 | afiL_box : forall x t1,
       appears_free_inL x t1 ->
       appears_free_inL x <{ box t1 }>
@@ -821,8 +829,8 @@ Inductive appears_free_inL : string -> tm -> Prop :=
 Hint Constructors appears_free_inL : core.
 
 Inductive appears_free_inG : string -> tm -> Prop :=
-  | afiG_local_var : forall (x : string),
-      appears_free_inG x (local_var x)
+(* | afiG_local_var : forall (x : string),
+      appears_free_inG x (local_var x) *)
   | afiG_app1 : forall x t1 t2,
       appears_free_inG x t1 -> appears_free_inG x <{ t1 t2 }>
   | afiG_app2 : forall x t1 t2,
@@ -953,33 +961,37 @@ Proof.
 Qed.
 
 Lemma local_substitution_preserves_typing'
-  : forall Delta Gamma x U t v T,
+  : forall Delta Gamma Gamma'' x U t v T
+           (SubGamma'' : inclusion Gamma'' Gamma),
     (forall z, bound_in z t -> ~ appears_free_inL z v) ->
     (forall z, bound_in z t -> ~ appears_free_inG z v) ->
-    Delta;; (x |-> U; Gamma) |- t \in T ->
+    Delta;; (x |-> U; Gamma'') |- t \in T ->
   Delta;; Gamma |- v \in U   ->
   Delta;; Gamma |- [x:=v]t \in T.
 Proof.
-  intros Delta Gamma x U t v T AFIL AFIG Ht.
-  remember (x |-> U; Gamma) as Gamma'.
+  intros Delta Gamma Gamma'' x U t v T SubGamma'' AFIL AFIG Ht.
+  remember (x |-> U; Gamma'') as Gamma'.
   generalize dependent Gamma.
-  revert x U AFIL AFIG.
+  revert HeqGamma'.
+  revert Gamma'' x U AFIL AFIG.
   pattern Delta, Gamma', t, T, Ht;
     eapply has_type_ind' with
     (P := fun Delta Gamma' t T _ =>
-            forall x U
+            forall Gamma'' x U
                    (AFIL : forall z : string, bound_in z t -> ~ appears_free_inL z v)
                    (AFIG : forall z : string, bound_in z t -> ~ appears_free_inG z v)
-              (Gamma : context)
-              (Heq : Gamma' = (x |-> U; Gamma))
+                   (Heq : Gamma' = (x |-> U; Gamma''))
+                   (Gamma : context)
+                   (SubGamma'' : inclusion Gamma'' Gamma)
               (Hv : Delta;; Gamma |- v \in U),
               Delta;; Gamma |- [x := v] t \in T)
     (P0 := fun Delta Gamma' t T _ =>
-             forall x U
+             forall Gamma'' x U
                     (AFIL : forall z : string, bound_in z t -> ~ appears_free_inL z v)
                     (AFIG : forall z : string, bound_in z t -> ~ appears_free_inG z v)
-               (Gamma : context)
-               (Heq : Gamma' = (x |-> U; Gamma))
+                    (Heq : Gamma' = (x |-> U; Gamma''))
+                    (Gamma : context)
+                    (SubGamma'' : inclusion Gamma'' Gamma)
                (Hv : Delta;; Gamma |- v \in U),
                has_local_type Delta Gamma (<{[x := v] t}>) T);
     eauto using inclusion_update; clear; intros; subst; simpl; eauto.
@@ -990,23 +1002,23 @@ Proof.
     + (* x=y *)
       rewrite update_eq in e.
       injection e as H2; subst.
-      rewrite eqb_refl; intros; eapply weakening; try eassumption;
-        unfold inclusion; eauto;
-        compute; congruence.
+      rewrite eqb_refl; intros; eauto.
     + (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       intros; apply T_Local_Var.
-      rewrite update_neq in e; auto.
+      rewrite update_neq in e; compute in e; eauto.
   - (* abs *)
     rename x1 into x.
     rename x0 into y.
     destruct (eqb_stringP x y); subst.
     + (* x=y *)
       rewrite eqb_refl; rewrite update_shadow in h; eauto.
+      econstructor.
+      eapply weakening; try eassumption; eauto using inclusion_refl, inclusion_update.
     +  (* x<>y *)
       rewrite (proj2 (eqb_neq x y)); eauto.
       apply T_Abs.
-      eapply H; eauto.
+      eapply H; eauto using inclusion_update.
       rewrite update_permute; auto.
       eapply local_weaken_unused_var; eauto.
   -  (* app *)
@@ -1039,17 +1051,19 @@ Proof.
 Qed.
 
 Theorem local_substitution_preserves_local_typing'
-  : forall Delta Gamma x U t v T,
+  : forall Delta Gamma Gamma'' x U t v T
+           (SubGamma'' : inclusion Gamma'' Gamma),
     (forall z, bound_in z t -> ~ appears_free_inL z v) ->
     (forall z, bound_in z t -> ~ appears_free_inG z v) ->
-    has_local_type Delta (x |-> U; Gamma) t T ->
+    has_local_type Delta (x |-> U; Gamma'') t T ->
     Delta;; Gamma |- v \in U   ->
   has_local_type Delta Gamma <{[x:=v]t}> T.
 Proof.
-  intros Delta Gamma x U t v T AFIL AFIG Ht.
-  remember (x |-> U; Gamma) as Gamma'.
+  intros Delta Gamma Gamma'' x U t v T SubGamma'' AFIL AFIG Ht.
+  remember (x |-> U; Gamma'') as Gamma'.
   generalize dependent Gamma.
   revert AFIL AFIG.
+  revert Gamma'' HeqGamma'.
   induction Ht; intros; subst; simpl; eauto.
   - econstructor; eauto.
     eapply local_substitution_preserves_typing';
@@ -1151,55 +1165,72 @@ Proof.
 Qed.
 
 Lemma delaying_preserves_local_typing
-  : forall Delta Gamma x U t v T,
+  : forall Delta Gamma Gamma'' x U t v T
+           (SubGamma'' : inclusion Gamma'' Gamma),
     (forall z, bound_in z t -> ~ appears_free_inL z v) ->
     (forall z, bound_in z t -> ~ appears_free_inG z v) ->
+    (forall z, bound_in z t -> ~ bound_in z v) ->
     (forall z, bound_in z v -> ~ appears_free_inG z t) ->
-    has_local_type Delta (x |-> U; Gamma) t T ->
+    has_local_type Delta (x |-> U) t T ->
     has_local_type Delta Gamma v U   ->
     has_local_type Delta Gamma <{〈 x := v〉t}> T.
 Proof.
-  intros Delta Gamma x U t v T AFIL AFIG AFIG' Ht Hv.
+  intros Delta Gamma Gamma'' x U t v T SubGamma'' AFIL AFIG NIn AFIG' Ht Hv.
   generalize dependent T.
-  revert AFIL AFIG AFIG'.
+  revert Gamma'' SubGamma'' AFIL AFIG NIn AFIG'.
   pattern Delta, Gamma, v, U, Hv.
     eapply has_local_type_ind' with
       (P := (fun Delta Gamma v U _ =>
+               forall Gamma'' : partial_map ty,
+                 inclusion Gamma'' Gamma ->
                (forall z : string, bound_in z t -> ~ appears_free_inL z v) ->
                (forall z : string, bound_in z t -> ~ appears_free_inG z v) ->
+               (forall z : string, bound_in z t -> ~ bound_in z v) ->
                (forall z : string, bound_in z v -> ~ appears_free_inG z t) ->
                forall (T : ty),
-                 has_local_type Delta (x |-> U; Gamma) t T ->
+                 has_local_type Delta (x |-> U) t T ->
                  has_local_type Delta Gamma <{ 〈 x := v〉  t }> T))
       (P0 := (fun Delta Gamma v U _ =>
+                forall Gamma'' : partial_map ty,
+                  inclusion Gamma'' Gamma ->
                 (forall z : string, bound_in z t -> ~ appears_free_inL z v) ->
-               (forall z : string, bound_in z t -> ~ appears_free_inG z v) ->
+                (forall z : string, bound_in z t -> ~ appears_free_inG z v) ->
+                (forall z : string, bound_in z t -> ~ bound_in z v) ->
                (forall z : string, bound_in z v -> ~ appears_free_inG z t) ->
                 forall (T : ty),
-                 has_local_type Delta (x |-> U; Gamma) t T ->
+                 has_local_type Delta (x |-> U) t T ->
                  has_local_type Delta Gamma <{ 〈 x := v〉  t }> T));
       simpl; intros;
       try solve [econstructor; eauto];
-      try solve [subst;
-                 eauto using local_substitution_preserves_local_typing'].
+      try solve [ eapply local_substitution_preserves_local_typing' with (Gamma'' := empty);
+                  eauto; compute; congruence].
   - simpl; econstructor; eauto.
     eapply H0; eauto.
-    unfold not; intros; eapply H1; eauto.
-    unfold not; intros; eapply H3; eauto.
-    admit.
-    eapply global_weaken_unused_var'; eauto.
-  - simpl; econstructor. eauto.
-    eapply H0; eauto.
-    admit.
-    admit.
-    admit.
+    + unfold not; intros; eapply H2; eauto.
+    + intros; destruct (eqb_stringP z0 x0); subst.
+      * unfold not; intros;  eapply H4 in H7; eapply H7; eauto.
+      * unfold not; intros; eapply H3; eauto.
+    + unfold not; intros; eapply H4; eauto.
+    + eapply global_weaken_unused_var'; eauto.
   - simpl; econstructor; eauto.
     eapply H0; eauto.
-    unfold not; intros; eapply H1; eauto.
-    unfold not; intros; eapply H3; eauto.
-    admit.
-    eapply global_weaken_unused_var'; eauto.
-Admitted.
+    + instantiate (1 := empty); compute; congruence.
+    + unfold not; intros; destruct (eqb_stringP z0 x0); subst.
+      * eapply H4; eauto.
+      * eapply H2; eauto.
+    + unfold not; intros; eapply H3; eauto.
+    + unfold not; intros; eapply H4; eauto.
+  - simpl; econstructor; eauto.
+    eapply H0; eauto.
+    + unfold not; intros; eapply H2; eauto.
+    + intros; destruct (eqb_stringP z0 x0); subst.
+      * unfold not; intros;  eapply H4 in H7; eapply H7; eauto.
+      * unfold not; intros; eapply H3; eauto.
+    + unfold not; intros; eapply H4; eauto.
+    + eapply global_weaken_unused_var'; eauto.
+  - eapply H; eauto.
+  - eauto.
+Qed.
 
 Lemma afiL_has_type :
   forall Delta Gamma t T,
@@ -1208,7 +1239,24 @@ Lemma afiL_has_type :
       appears_free_inL x t ->
       Gamma x <> None.
 Proof.
-Admitted.
+  intros Delta Gamma t T Hv.
+    pattern Delta, Gamma, t, T, Hv.
+    eapply has_local_type_ind' with
+      (P := fun Delta Gamma t T Hv =>
+              forall x0 : string, appears_free_inL x0 t -> Gamma x0 <> None)
+      (P0 := fun Delta Gamma t T Hv =>
+               forall x0 : string, appears_free_inL x0 t -> Gamma x0 <> None);
+      intros; try match goal with
+                    H : appears_free_inL _ _ |- _ => inversion H; subst; eauto
+                  end.
+  - congruence.
+  - eapply H in H6.
+    rewrite update_neq in H6; eauto.
+  - eapply H in H3; compute in H3; congruence.
+  - eapply H0 in H7.
+    rewrite update_neq in H7; compute in H7; congruence.
+  - econstructor; eauto.
+Qed.
 
 Lemma afiL_has_local_type :
   forall Delta Gamma t T,
@@ -1217,7 +1265,24 @@ Lemma afiL_has_local_type :
       appears_free_inL x t ->
       Gamma x <> None.
 Proof.
-Admitted.
+    intros Delta Gamma t T Hv.
+    pattern Delta, Gamma, t, T, Hv.
+    eapply has_local_type_ind' with
+      (P := fun Delta Gamma t T Hv =>
+              forall x0 : string, appears_free_inL x0 t -> Gamma x0 <> None)
+      (P0 := fun Delta Gamma t T Hv =>
+               forall x0 : string, appears_free_inL x0 t -> Gamma x0 <> None);
+      intros; try match goal with
+                    H : appears_free_inL _ _ |- _ => inversion H; subst; eauto
+                  end.
+  - congruence.
+  - eapply H in H6.
+    rewrite update_neq in H6; eauto.
+  - eapply H in H3; compute in H3; congruence.
+  - eapply H0 in H7.
+    rewrite update_neq in H7; compute in H7; congruence.
+  - eauto.
+Qed.
 
 Lemma afiG_has_type :
   forall Delta Gamma t T,
@@ -1226,7 +1291,21 @@ Lemma afiG_has_type :
       appears_free_inG x t ->
       Delta x <> None.
 Proof.
-Admitted.
+  intros Delta Gamma t T Hv.
+    pattern Delta, Gamma, t, T, Hv.
+    eapply has_local_type_ind' with
+      (P := fun Delta Gamma t T Hv =>
+              forall x0 : string, appears_free_inG x0 t -> Delta x0 <> None)
+      (P0 := fun Delta Gamma t T Hv =>
+               forall x0 : string, appears_free_inG x0 t -> Delta x0 <> None);
+      intros; try match goal with
+                    H : appears_free_inG _ _ |- _ => inversion H; subst; eauto
+                  end.
+  - congruence.
+  - eapply H0 in H7; rewrite update_neq in H7; eauto.
+  - eapply H0 in H7; rewrite update_neq in H7; eauto.
+  - econstructor; eauto.
+Qed.
 
 Lemma afiG_has_local_type :
   forall Delta Gamma t T,
@@ -1235,10 +1314,224 @@ Lemma afiG_has_local_type :
       appears_free_inG x t ->
       Delta x <> None.
 Proof.
+Proof.
+  intros Delta Gamma t T Hv.
+    pattern Delta, Gamma, t, T, Hv.
+    eapply has_local_type_ind' with
+      (P := fun Delta Gamma t T Hv =>
+              forall x0 : string, appears_free_inG x0 t -> Delta x0 <> None)
+      (P0 := fun Delta Gamma t T Hv =>
+               forall x0 : string, appears_free_inG x0 t -> Delta x0 <> None);
+      intros; try match goal with
+                    H : appears_free_inG _ _ |- _ => inversion H; subst; eauto
+                  end.
+  - congruence.
+  - eapply H0 in H7; rewrite update_neq in H7; eauto.
+  - eapply H0 in H7; rewrite update_neq in H7; eauto.
+  - eauto.
+Qed.
+
+Reserved Notation "Env1 , Env2, Env3, Env4 ||- s ==a t" (at level 20).
+
+Inductive alpha_equiv :
+  partial_map string ->
+  partial_map string ->
+  partial_map string ->
+  partial_map string ->
+  tm -> tm -> Prop :=
+
+(* Pure Lambda Terms *)
+| equiv_free_local_var :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2'
+         x,
+      VarEnv2 x = None ->
+      VarEnv2' x = None ->
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' (local_var x) (local_var x)
+
+| equiv_bound_local_var :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2' x y,
+      VarEnv2 x = Some y ->
+      VarEnv2' y = Some x ->
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' (local_var x) (local_var y)
+| equiv_tm_app :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2' t1 t1' t2 t2',
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1' ->
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t2 t2' ->
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' <{t1 t2}> <{t1' t2'}>
+| equiv_tm_abs :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2' x y t1 t1' T,
+    alpha_equiv VarEnv1 VarEnv1' (x |-> y; VarEnv2) (y |-> x; VarEnv2') t1 t1' ->
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' <{\x : T, t1}> <{\y : T, t1'}>
+(* Booleans *)
+| equiv_true :
+    forall VarEnv1 VarEnv1'
+           VarEnv2 VarEnv2',
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' tm_true tm_true
+| equiv_false :
+    forall VarEnv1 VarEnv1'
+           VarEnv2 VarEnv2',
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' tm_false tm_false
+| equiv_if :
+    forall VarEnv1 VarEnv1'
+           VarEnv2 VarEnv2'
+           t1 t1' t2 t2' t3 t3',
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1' ->
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t2 t2' ->
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t3 t3' ->
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' <{if t1 then t2 else t3}>
+      <{if t1' then t2' else t3'}>
+
+(* Box operators *)
+| equiv_free_global_var :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2'
+         x,
+      VarEnv1 x = None ->
+      VarEnv1' x = None ->
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' (global_var x) (global_var x)
+| equiv_bound_global_var :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2' x y,
+      VarEnv1 x = Some y ->
+      VarEnv1' y = Some x ->
+      alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' (global_var x) (global_var y)
+| equiv_box :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2' t1 t1',
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1' ->
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' <{ box t1}> <{box t1'}>
+| equiv_unbox :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2'
+         t1 t1' t2 t2' x y,
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1' ->
+    alpha_equiv (x |-> y; VarEnv1) (y |-> x; VarEnv1') VarEnv2 VarEnv2' t2 t2' ->
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' <{ unbox x := t1 in t2}>
+    <{unbox y := t1' in t2'}>
+
+(* Diamond operators *)
+| equiv_dia :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2' t1 t1',
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1' ->
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' <{ dia t1}> <{dia t1'}>
+| equiv_undia :
+  forall VarEnv1 VarEnv1'
+         VarEnv2 VarEnv2'
+         t1 t1' t2 t2' x y,
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1' ->
+    alpha_equiv VarEnv1 VarEnv1' (x |-> y; VarEnv2) (y |-> x; VarEnv2') t2 t2' ->
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' <{ undia x := t1 in t2}>
+    <{undia y := t1' in t2'}>.
+
+Hint Constructors alpha_equiv.
+
+Lemma alpha_equiv_sym :
+  forall VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1',
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1' ->
+    alpha_equiv VarEnv1' VarEnv1 VarEnv2' VarEnv2 t1' t1.
+Proof.
+  induction 1; eauto.
+Qed.
+
+Lemma alpha_equiv_refl :
+  forall VarEnv1 VarEnv2 t1,
+    (forall s s', VarEnv1 s = Some s' -> s = s') ->
+    (forall s s', VarEnv2 s = Some s' -> s = s') ->
+    alpha_equiv VarEnv1 VarEnv1 VarEnv2 VarEnv2 t1 t1.
+Proof.
+  intros ? ? ?.
+  revert VarEnv1 VarEnv2. induction t1; intros; eauto.
+  - destruct (VarEnv2 s0) eqn: ?; eauto.
+    assert (s0 = s1) by (apply H0; eassumption); subst; eauto.
+  - constructor.
+    apply IHt1; simpl; intros; eauto.
+    destruct (s0 =? s1) eqn: ?.
+    + apply eqb_eq in Heqb. subst.
+      rewrite update_eq in H1; congruence.
+    + apply eqb_neq in Heqb.
+      rewrite update_neq in H1 by (apply Heqb).
+      eauto.
+  - destruct (VarEnv1 s0) eqn: ?; eauto.
+    assert (s0 = s1) by (apply H; eassumption); subst; eauto.
+  - constructor.
+    apply IHt1_1; simpl; intros; eauto.
+    apply IHt1_2; simpl; intros; eauto.
+    destruct (s0 =? s1) eqn: ?.
+    + apply eqb_eq in Heqb. subst.
+      rewrite update_eq in H1; congruence.
+    + apply eqb_neq in Heqb.
+      rewrite update_neq in H1 by (apply Heqb).
+      eauto.
+  - constructor.
+    apply IHt1_1; simpl; intros; eauto.
+    apply IHt1_2; simpl; intros; eauto.
+    destruct (s0 =? s1) eqn: ?.
+    + apply eqb_eq in Heqb. subst.
+      rewrite update_eq in H1; congruence.
+    + apply eqb_neq in Heqb.
+      rewrite update_neq in H1 by (apply Heqb).
+      eauto.
+Qed.
+
+(* Blech, too much binding nonsense... *)
+Lemma alpha_equiv_pres_typing :
+  forall Delta Gamma t1 T,
+    has_local_type Delta Gamma t1 T ->
+  forall VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1',
+    alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t1 t1' ->
+    forall Delta' Gamma',
+      (forall x, VarEnv1 x = Some y ->
+                 exists T, Delta x = Some T /\
+                             Delta y = Some T) ->
+      (forall x, VarEnv2 x = Some y ->
+                 exists T, Gamma x = Some T /\
+                             Gamma' y = Some T) ->
+      has_local_type Delta' Gamma' t1' T.
+Proof.
+  intros ? ? ? ? ?.
+  pattern Delta, Gamma, t1, T, H.
+  eapply has_local_type_ind' with
+    (P := (fun (c c0 : context) (t0 : tm) (t2 : ty) (_ : has_type c c0 t0 t2) =>
+             forall (VarEnv1 VarEnv1' VarEnv2 VarEnv2' : partial_map string) (t1' : tm),
+               alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t0 t1' ->
+               forall (Delta' : context) (Gamma' : LocalVar -> option ty),
+                 (forall x : string, VarEnv1 x = Some y -> exists T0 : ty, c x = Some T0 /\ c y = Some T0) ->
+                 (forall x : string, VarEnv2 x = Some y -> exists T0 : ty, c0 x = Some T0 /\ Gamma' y = Some T0) ->
+                 has_type Delta' Gamma' t1' t2))
+    (P0 := (fun (c c0 : context) (t0 : tm) (t2 : ty) (_ : has_local_type c c0 t0 t2) =>
+             forall (VarEnv1 VarEnv1' VarEnv2 VarEnv2' : partial_map string) (t1' : tm),
+               alpha_equiv VarEnv1 VarEnv1' VarEnv2 VarEnv2' t0 t1' ->
+               forall (Delta' : context) (Gamma' : LocalVar -> option ty),
+                 (forall x : string, VarEnv1 x = Some y -> exists T0 : ty, c x = Some T0 /\ c y = Some T0) ->
+                 (forall x : string, VarEnv2 x = Some y -> exists T0 : ty, c0 x = Some T0 /\ Gamma' y = Some T0) ->
+                 has_local_type Delta' Gamma' t1' t2)); simpl; intros;
+    try match goal with
+        | H : alpha_equiv _ _ _ _ _ _ |- _ => inversion H; subst; clear H
+        end; eauto.
+  admit.
+  admit.
+  admit.
+  admit.
+  admit.
+  econstructor.
 Admitted.
 
-(* Alas, it appears that we cannot escape variable renaming :p *)
+Parameter exists_alpha_equiv_unbound
+  : forall t1 t2,
+  exists t3, alpha_equiv empty empty empty empty t1 t3 /\
+               forall z, bound_in z t3 -> ~ bound_in z t2.
 
+Parameter delay_preserves_alpha_equiv
+  : forall z t1 t2 t3,
+    alpha_equiv empty empty empty empty t1 t2 ->
+    alpha_equiv empty empty empty empty <{〈 z := t3〉 t1}> <{〈 z := t3〉 t2}>.
+
+(* Alas, it appears that we cannot escape variable renaming :p *)
 Theorem preservation : forall t t' T,
   empty;; empty |- t \in T  ->
   t --> t'  ->
@@ -1272,20 +1565,29 @@ Proof with eauto.
   - inversion HE; subst...
     + econstructor; eauto.
     + inversion h; subst.
-      eapply delaying_preserves_local_typing; try eassumption.
-      * unfold not; intros.
-        eapply afiL_has_local_type; eauto.
-      * unfold not; intros.
-        eapply afiG_has_local_type; eauto.
-      * unfold not; intros.
-        eapply afiG_has_local_type.
-        2: eassumption.
-        all: eauto.
+      destruct (exists_alpha_equiv_unbound t2 t0) as [t2' [eqv_t2 ?] ].
+      eapply alpha_equiv_pres_typing.
+      * eapply delaying_preserves_local_typing with (t := t2'); try eassumption.
+        -- apply inclusion_refl.
+        -- unfold not; intros.
+           eapply afiL_has_local_type; eauto.
+        -- unfold not; intros.
+           eapply afiG_has_local_type; eauto.
+        -- unfold not; intros.
+           eapply alpha_equiv_pres_typing with (Delta' := empty) (Gamma' := x0 |-> T1) in h0; try eassumption.
+           eapply afiG_has_local_type in h0; eauto.
+           compute; discriminate.
+           compute; discriminate.
+        -- eapply alpha_equiv_pres_typing; eauto using alpha_equiv_sym.
+           ++ compute; intros; discriminate.
+           ++ compute; intros; discriminate.
+      * eapply delay_preserves_alpha_equiv.
+        eapply alpha_equiv_sym; eassumption.
+      * unfold empty; compute; intros; discriminate.
+      * unfold empty; compute; intros; discriminate.
   - inversion HE; subst...
     + econstructor; eauto.
     + eapply global_substitution_preserves_local_typing; eauto.
       inversion h; subst; assumption.
   - econstructor; eauto.
 Qed.
-
-Print Assumptions local_substitution_preserves_typing'.
